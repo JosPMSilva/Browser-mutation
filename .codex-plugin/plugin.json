@@ -1,0 +1,41 @@
+{
+  "name": "browser-mutation",
+  "version": "0.1.0",
+  "description": "Capture live browser UI edits as structured mutation intent for Codex.",
+  "author": {
+    "name": "JosPMSilva",
+    "url": "https://github.com/JosPMSilva/Browser-mutation"
+  },
+  "homepage": "https://github.com/JosPMSilva/Browser-mutation",
+  "repository": "https://github.com/JosPMSilva/Browser-mutation",
+  "license": "MIT",
+  "keywords": [
+    "browser",
+    "frontend",
+    "ui-mutation",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Browser Mutation",
+    "shortDescription": "Turn live UI edits into Codex-ready deltas.",
+    "longDescription": "Injects a local browser overlay for selecting, editing, moving, resizing, reparenting, and reordering rendered elements, then captures the finished state as structured mutation records for Codex source edits.",
+    "developerName": "JosPMSilva",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/JosPMSilva/Browser-mutation",
+    "privacyPolicyURL": "https://github.com/JosPMSilva/Browser-mutation/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/JosPMSilva/Browser-mutation/blob/main/TERMS.md",
+    "defaultPrompt": [
+      "Start Browser Mutation on this local page.",
+      "Apply the latest Browser Mutation edits.",
+      "Show me the captured UI deltas."
+    ],
+    "brandColor": "#5B8DEE"
+  }
+}

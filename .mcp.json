@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "browser_mutation": {
+      "command": "node",
+      "args": [
+        "./scripts/browser-mutation-mcp.mjs"
+      ]
+    }
+  }
+}

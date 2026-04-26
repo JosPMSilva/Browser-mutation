@@ -1,0 +1,28 @@
+{
+  "name": "browser-mutation",
+  "version": "0.1.0",
+  "description": "Capture live browser UI edits as structured mutation intent for Codex.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "browser-mutation": "./scripts/browser-mutation-mcp.mjs"
+  },
+  "files": [
+    ".codex-plugin",
+    ".mcp.json",
+    "docs",
+    "scripts",
+    "skills",
+    "README.md",
+    "LICENSE",
+    "PRIVACY.md",
+    "TERMS.md",
+    "SECURITY.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "doctor": "node scripts/doctor.mjs",
+    "install:codex": "node scripts/install-codex.mjs",
+    "start": "node scripts/start-collector.mjs"
+  }
+}
