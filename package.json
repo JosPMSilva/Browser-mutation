@@ -1,6 +1,6 @@
 {
   "name": "browser-mutation",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Capture live browser UI edits as structured mutation intent for Codex.",
   "type": "module",
   "license": "MIT",
