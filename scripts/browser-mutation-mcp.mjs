@@ -17,7 +17,8 @@ const state = {
   port: null,
   activeTarget: null,
   latest: null,
-  sessions: []
+  sessions: [],
+  staticServers: []
 };
 
 function sendMessage(message) {
@@ -66,6 +67,157 @@ function requireLocalTarget(targetUrl) {
     throw new Error("Browser Mutation proxy only supports loopback/local development URLs.");
   }
   return new URL(targetUrl);
+}
+
+function ensureInsideRoot(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function contentTypeFor(filePath) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".html":
+    case ".htm":
+      return "text/html; charset=utf-8";
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".js":
+    case ".mjs":
+      return "text/javascript; charset=utf-8";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".svg":
+      return "image/svg+xml";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    case ".ico":
+      return "image/x-icon";
+    case ".woff":
+      return "font/woff";
+    case ".woff2":
+      return "font/woff2";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+async function serveStaticFile(req, res, root) {
+  const requestUrl = getRequestUrl(req);
+  let pathname;
+  try {
+    pathname = decodeURIComponent(requestUrl.pathname);
+  } catch {
+    res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+    res.end("Bad request.");
+    return;
+  }
+
+  let filePath = path.resolve(root, `.${pathname}`);
+  if (!ensureInsideRoot(root, filePath)) {
+    res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
+    res.end("Forbidden.");
+    return;
+  }
+
+  try {
+    let stat = await fs.stat(filePath);
+    if (stat.isDirectory()) {
+      filePath = path.join(filePath, "index.html");
+      if (!ensureInsideRoot(root, filePath)) {
+        res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
+        res.end("Forbidden.");
+        return;
+      }
+      stat = await fs.stat(filePath);
+    }
+    if (!stat.isFile()) {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Not found.");
+      return;
+    }
+
+    const body = await fs.readFile(filePath);
+    res.writeHead(200, {
+      "content-type": contentTypeFor(filePath),
+      "content-length": String(body.byteLength)
+    });
+    if (req.method !== "HEAD") {
+      res.end(body);
+    } else {
+      res.end();
+    }
+  } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Not found.");
+      return;
+    }
+    throw error;
+  }
+}
+
+async function startStaticServer(root) {
+  const resolvedRoot = path.resolve(root);
+  const stat = await fs.stat(resolvedRoot);
+  if (!stat.isDirectory()) {
+    throw new Error(`Static root must be a directory: ${resolvedRoot}`);
+  }
+
+  const server = http.createServer((req, res) => {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      res.writeHead(405, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Method not allowed.");
+      return;
+    }
+    serveStaticFile(req, res, resolvedRoot).catch((error) => {
+      res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+      res.end(error instanceof Error ? error.message : String(error));
+    });
+  });
+
+  return await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : null;
+      state.staticServers.push(server);
+      resolve(`http://127.0.0.1:${port}`);
+    });
+  });
+}
+
+function encodePathSegment(segment) {
+  return encodeURIComponent(segment).replaceAll("%2E", ".");
+}
+
+async function targetFromFile(filePath) {
+  const resolvedFile = path.resolve(filePath);
+  const stat = await fs.stat(resolvedFile);
+  if (!stat.isFile()) {
+    throw new Error(`Static file target must be a file: ${resolvedFile}`);
+  }
+  const origin = await startStaticServer(path.dirname(resolvedFile));
+  return `${origin}/${encodePathSegment(path.basename(resolvedFile))}`;
+}
+
+async function targetFromRoot(rootPath) {
+  const origin = await startStaticServer(rootPath);
+  return `${origin}/`;
+}
+
+async function normalizeTargetUrl(targetUrl) {
+  const url = new URL(targetUrl);
+  if (url.protocol === "file:") {
+    return await targetFromFile(fileURLToPath(url));
+  }
+  return requireLocalTarget(url.toString()).toString();
 }
 
 async function readBody(req) {
@@ -267,15 +419,16 @@ async function getInjector(args = {}) {
   const latestUrl = `http://127.0.0.1:${state.port}${collectorBasePath}/latest?token=${state.token}`;
   const snippet = `fetch(${JSON.stringify(url)}).then((r) => r.text()).then((code) => (0, eval)(code));`;
   const addressBarJavascript = `javascript:${snippet}`;
-  const targetUrl = typeof args.targetUrl === "string" && args.targetUrl.trim() ? args.targetUrl.trim() : null;
+  const targetUrl = typeof args.targetUrl === "string" && args.targetUrl.trim() ? await normalizeTargetUrl(args.targetUrl.trim()) : null;
   const proxiedUrl = targetUrl
-    ? `http://127.0.0.1:${state.port}/proxy?target=${encodeURIComponent(requireLocalTarget(targetUrl).toString())}`
+    ? `http://127.0.0.1:${state.port}/proxy?target=${encodeURIComponent(targetUrl)}`
     : null;
   return {
     collectorUrl: `http://127.0.0.1:${state.port}`,
     overlayScriptUrl: url,
     latestUrl,
     proxiedUrl,
+    targetUrl,
     addressBarJavascript,
     browserUseRecipe: [
       "Use the Browser Use plugin with backend \"iab\".",
@@ -413,8 +566,28 @@ function readArg(name) {
   return process.argv[index + 1];
 }
 
-async function runServeCli() {
+async function resolveServeTarget() {
   const targetUrl = readArg("--target") ?? readArg("-t");
+  const filePath = readArg("--file");
+  const rootPath = readArg("--root");
+  const selected = [targetUrl, filePath, rootPath].filter(Boolean);
+  if (selected.length > 1) {
+    throw new Error("Use only one of --target, --file, or --root.");
+  }
+  if (filePath) {
+    return await targetFromFile(filePath);
+  }
+  if (rootPath) {
+    return await targetFromRoot(rootPath);
+  }
+  if (targetUrl) {
+    return await normalizeTargetUrl(targetUrl);
+  }
+  return null;
+}
+
+async function runServeCli() {
+  const targetUrl = await resolveServeTarget();
   const sessionFile = readArg("--session-file");
   const injector = await getInjector({ targetUrl });
   const payload = {

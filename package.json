@@ -23,6 +23,7 @@
   "scripts": {
     "doctor": "node scripts/doctor.mjs",
     "install:codex": "node scripts/install-codex.mjs",
-    "start": "node scripts/start-collector.mjs"
+    "start": "node scripts/start-collector.mjs",
+    "test": "node --test"
   }
 }

@@ -16,6 +16,14 @@ Start your local app first, then run:
 node scripts/start-collector.mjs --target http://localhost:5174
 ```
 
+For static local HTML, let Browser Mutation serve it from loopback HTTP:
+
+```bash
+node scripts/start-collector.mjs --file ./index.html
+node scripts/start-collector.mjs --root ./dist
+node scripts/start-collector.mjs --target file:///path/to/index.html
+```
+
 The command starts the collector in the background and prints JSON containing:
 
 - `proxiedUrl`: open this in the Codex in-app browser
@@ -57,6 +65,7 @@ Supported:
 - `http://localhost:*`
 - `http://127.0.0.1:*`
 - other loopback local development URLs
+- local files and folders passed with `--file`, `--root`, or `file://`, served back through `127.0.0.1`
 
 Not supported:
 

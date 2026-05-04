@@ -69,6 +69,13 @@ When this happens, use the standalone collector flow:
 node scripts/start-collector.mjs --target http://localhost:5174
 ```
 
+For static local HTML, use the same standalone flow with a built-in loopback static server:
+
+```bash
+node scripts/start-collector.mjs --file ./index.html
+node scripts/start-collector.mjs --root ./dist
+```
+
 This is the supported community-install path until Codex reliably mounts local plugin MCP tools into fresh model sessions.
 
 ## Manual Config Example

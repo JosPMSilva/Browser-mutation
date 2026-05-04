@@ -2,7 +2,7 @@
 
 Browser Mutation captures visual edits made in the Codex in-app browser and turns them into structured implementation intent for Codex.
 
-It is intended for user-owned local development pages such as `http://localhost:5174`, `http://127.0.0.1:3000`, and similar loopback targets.
+It is intended for user-owned local development pages such as `http://localhost:5174`, `http://127.0.0.1:3000`, and similar loopback targets. Local HTML files can be served through the built-in loopback static server.
 
 ## What It Includes
 
@@ -66,6 +66,13 @@ Use Browser Mutation on this page.
 
 ```bash
 node scripts/start-collector.mjs --target http://localhost:5174
+```
+
+For a static HTML file or folder:
+
+```bash
+node scripts/start-collector.mjs --file ./index.html
+node scripts/start-collector.mjs --root ./dist
 ```
 
 The local collector starts a browser proxy for the target page and records the edits sent from the Browser Mutation overlay. See the [usage guide](docs/usage.md) for the full workflow.
