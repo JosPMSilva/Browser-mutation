@@ -39,8 +39,11 @@ async function readJsonWhenReady(filePath, timeoutMs = 10000) {
 }
 
 const targetUrl = readArg("--target") ?? readArg("-t");
-if (!targetUrl) {
-  console.error("Usage: node scripts/start-collector.mjs --target http://localhost:5174");
+const filePath = readArg("--file");
+const rootPath = readArg("--root");
+const selectedTargets = [targetUrl, filePath, rootPath].filter(Boolean);
+if (selectedTargets.length !== 1) {
+  console.error("Usage: node scripts/start-collector.mjs (--target http://localhost:5174 | --file ./index.html | --root ./dist)");
   process.exit(2);
 }
 
@@ -48,14 +51,23 @@ const sessionFile = readArg("--session-file") ?? defaultSessionFile;
 await fs.mkdir(path.dirname(sessionFile), { recursive: true });
 await fs.rm(sessionFile, { force: true });
 
-const child = spawn(process.execPath, [
+const childArgs = [
   collectorScript,
   "--serve",
-  "--target",
-  targetUrl,
   "--session-file",
   sessionFile
-], {
+];
+if (targetUrl) {
+  childArgs.push("--target", targetUrl);
+}
+if (filePath) {
+  childArgs.push("--file", filePath);
+}
+if (rootPath) {
+  childArgs.push("--root", rootPath);
+}
+
+const child = spawn(process.execPath, childArgs, {
   detached: true,
   stdio: "ignore",
   windowsHide: true

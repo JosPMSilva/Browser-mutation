@@ -26,6 +26,13 @@ Do not spend the task repeatedly probing `tool_search`, editing `.mcp.json`, or 
 node scripts/start-collector.mjs --target http://localhost:5174
 ```
 
+For static local HTML, use:
+
+```bash
+node scripts/start-collector.mjs --file ./index.html
+node scripts/start-collector.mjs --root ./dist
+```
+
 The launcher exits after printing JSON with `proxiedUrl`, `latestUrl`, `pid`, and `sessionFile`. The collector keeps running in the background.
 
 Do not manually detach `browser-mutation-mcp.mjs` or scrape process logs for URLs.
@@ -62,6 +69,7 @@ Preferred user commands:
 Agent behavior:
 
 - If the current tab is local, reopen it through the Browser Mutation proxy.
+- If the target is a local HTML file, use `--file` or `--root`; Browser Mutation serves it from loopback HTTP before proxying.
 - If the current tab is not local, explain that this MVP only supports local/dev pages and ask for the local app URL.
 - If Browser Mutation MCP tools are unavailable, use the standalone collector flow and keep the explanation brief.
 - Never make the user paste a proxy URL when Browser Use can navigate the tab itself.
