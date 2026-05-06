@@ -80,6 +80,10 @@ The Browser Use runtime does not expose arbitrary page `evaluate`. Use the local
 
 Use the Browser Use skill's current setup instructions for the in-app browser runtime. Do not hard-code paths to another user's Codex plugin cache.
 
+When Browser Mutation is active, plain page interaction must remain possible. Use DOM locators for app controls where practical. Coordinate clicks should only be used for app interaction when Browser Mutation is in Interact/pass-through mode. Element selection should be explicitly armed with Select mode or modifier click.
+
+Mode shortcuts in the overlay are `Ctrl+Alt+I` for Interact, `Ctrl+Alt+S` for Select element, and `Ctrl+Alt+D` to dock the panel to the launcher. Notes are sent as explicit `action: "note"` records. If an element is selected, the note is tied to that element; otherwise it is a session note. `Ctrl+Enter` in the notes field adds the note. Pending notes are included automatically on Send, successful sends clear the notes field, and duplicate identical sends are blocked until records change. Do not rely on top-level payload notes when records are present.
+
 ## Translation Rules
 
 - Treat the mutation record as implementation intent, not as a literal CSS patch.
@@ -108,7 +112,7 @@ Each record includes:
 - `react`: best-effort React Fiber source hints when available in dev mode.
 - `parent`, `index`, and `siblings`: surrounding layout context.
 - `rect` and `styles`: before/after geometry and selected computed styles.
-- `extra`: action-specific implementation intent.
+- `extra`: action-specific implementation intent. Note records include `extra.noteOnly: true` and `extra.scope` of `element` or `session`.
 - `notes`: optional user notes from the overlay.
 
 ## Limits

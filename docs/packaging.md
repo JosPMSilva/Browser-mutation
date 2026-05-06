@@ -24,6 +24,15 @@ node scripts/doctor.mjs
 
 Requirement: the user has `git` and `node` installed on their own machine. The installer discovers and writes that user's actual Node path.
 
+Normal git updates should not rerun the installer:
+
+```bash
+git pull
+node scripts/update-codex.mjs
+```
+
+The update command verifies the local plugin without editing Codex config.
+
 ### Optional Future Distribution: npm Package
 
 Publish as `browser-mutation`:

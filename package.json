@@ -1,6 +1,6 @@
 {
   "name": "browser-mutation",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Capture live browser UI edits as structured mutation intent for Codex.",
   "type": "module",
   "license": "MIT",
@@ -23,7 +23,7 @@
   "scripts": {
     "doctor": "node scripts/doctor.mjs",
     "install:codex": "node scripts/install-codex.mjs",
-    "start": "node scripts/start-collector.mjs",
-    "test": "node --test"
+    "update:codex": "node scripts/update-codex.mjs",
+    "start": "node scripts/start-collector.mjs"
   }
 }

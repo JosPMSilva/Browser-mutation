@@ -23,9 +23,10 @@ Browser Use can already highlight and annotate browser targets during automation
 
 Use Browser Mutation when you need:
 
-- before/after records for text, style, layout, icon, move, resize, reparent, reorder, and delete changes
+- before/after records for text, style, layout, icon, move, resize, reparent, reorder, note, and delete changes
 - element identity, selector hints, neighboring layout context, and computed style snapshots
 - optional React dev-mode source hints when available
+- explicit selected-element or session notes for implementation instructions
 - a captured edit payload after the user presses **Send**
 - repeatable handoff from a human visual edit to a source-code patch
 
@@ -56,6 +57,18 @@ Restart Codex Desktop. In Codex, open **Plugins > Local Codex Tools > Browser Mu
 
 Start a fresh Codex thread after enabling so the skill list and MCP config are reloaded.
 
+## Updating From Git
+
+For an existing install, update the plugin files without rewriting Codex config:
+
+```bash
+cd ~/plugins/browser-mutation
+git pull
+node scripts/update-codex.mjs
+```
+
+Do not rerun `node scripts/install-codex.mjs` for normal updates. The installer is for first install or deliberate config repair only.
+
 Then open a local app in the Codex in-app browser and ask:
 
 ```text
@@ -76,6 +89,8 @@ node scripts/start-collector.mjs --root ./dist
 ```
 
 The local collector starts a browser proxy for the target page and records the edits sent from the Browser Mutation overlay. See the [usage guide](docs/usage.md) for the full workflow.
+
+The overlay defaults to **Interact** mode so normal app clicks pass through. Use **Select element**, `Alt+Click`, or `Ctrl+Alt+S` only when selecting an element for mutation. Use `Ctrl+Alt+I` to return to Interact and `Ctrl+Alt+D` to dock the panel.
 
 ## Documentation
 

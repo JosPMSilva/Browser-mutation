@@ -28,11 +28,24 @@ https://github.com/JosPMSilva/Browser-mutation
 7. Use `node scripts/start-collector.mjs --target <local-url>` for actual captures unless the MCP tools are already visible.
 8. Use the launcher's printed `proxiedUrl` and `latestUrl`. Do not manually detach `browser-mutation-mcp.mjs` or scrape process logs for URLs.
 
+## Updating An Existing Install
+
+If the user asks to update Browser Mutation because a newer git version is available, do not run the installer. Use:
+
+```bash
+cd ~/plugins/browser-mutation
+git pull
+node scripts/update-codex.mjs
+```
+
+Normal updates must not edit `~/.codex/config.toml`. Run `install-codex.mjs` only for first install or explicit config repair.
+
 ## What The Agent Must Not Do
 
 - Do not copy contributor-local paths into the user's config.
 - Do not install Node automatically.
 - Do not write a partial Codex config when `node` is missing.
+- Do not rerun `install-codex.mjs` for normal git updates.
 - Do not repeatedly run `tool_search` for Browser Mutation after it returns no tools.
 - Do not edit `.mcp.json` with another user's absolute paths.
 - Do not ask the user to paste proxy URLs when Browser Use can navigate.

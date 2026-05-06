@@ -38,9 +38,32 @@ Do not manually detach `browser-mutation-mcp.mjs` or scrape process logs for URL
 
 1. Navigate the Codex in-app browser to `proxiedUrl`.
 2. Use the Browser Mutation launcher/panel.
-3. Select an element.
-4. Change text, style, layout, state styles, icons, or structure.
-5. Press **Send**.
+3. Leave the panel in **Interact** mode for normal app use. Plain page clicks pass through to the app.
+4. Use **Select element**, `Alt+Click`, or `Ctrl+Alt+S` when you want to select an element for mutation.
+5. Change text, style, layout, state styles, icons, or structure.
+6. Add implementation notes when useful:
+   - With an element selected, **Add note** records an `action: "note"` entry for that element.
+   - With no element selected, **Add note** records a session-level note.
+   - `Ctrl+Enter` in the notes field also adds the note.
+   - If a note is still pending when **Send** is pressed, it is automatically included as a note record.
+7. Press **Send**.
+
+Useful overlay shortcuts:
+
+- `Ctrl+Alt+I`: Interact mode
+- `Ctrl+Alt+S`: Select element mode
+- `Ctrl+Alt+D`: dock the panel to the launcher
+
+The clear X button opens a compact action menu:
+
+- Clear selection
+- Clear notes
+- Clear records
+- Undo last record
+- Mark sent and clear
+- Clear all
+
+After a successful send, the notes field is cleared. Sending the exact same payload again is blocked until the user adds or clears records, which prevents accidental duplicate latest payloads.
 
 ## Read Captured Mutations
 
@@ -57,6 +80,8 @@ Invoke-RestMethod '<latestUrl>'
 ```
 
 Codex should treat the records as implementation intent, not literal patches.
+
+Note records use `action: "note"` and `extra.noteOnly: true`. `extra.scope` is `"element"` for selected-element notes and `"session"` for session notes. Do not rely on top-level payload notes when records are present.
 
 ## Supported Targets
 

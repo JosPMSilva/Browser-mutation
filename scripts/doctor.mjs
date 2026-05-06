@@ -81,7 +81,7 @@ async function probeMcp() {
       params: {
         protocolVersion: "2025-06-18",
         capabilities: {},
-        clientInfo: { name: "browser-mutation-doctor", version: "0.1.0" }
+        clientInfo: { name: "browser-mutation-doctor", version: "0.1.2" }
       }
     }));
     child.stdin.write(frame({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }));
