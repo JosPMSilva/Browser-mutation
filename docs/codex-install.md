@@ -43,6 +43,8 @@ The installer updates:
 
 It also creates a timestamped backup before changing existing files.
 
+The installer validates Browser Mutation's managed config blocks before writing. If it detects duplicate managed sections or duplicate keys such as a second `args` line, it stops instead of rewriting `config.toml`.
+
 Restart Codex Desktop after installation.
 
 Then enable the plugin in Codex:
@@ -53,6 +55,18 @@ Then enable the plugin in Codex:
 4. Click **Add to Codex** or enable **Browser Mutation** if it is not already enabled.
 5. Confirm both **Browser_mutation** MCP server and **Mutation** skill toggles are enabled.
 6. Start a fresh Codex thread so the skill list and MCP config are reloaded.
+
+## Update Existing Install
+
+For normal updates from git, do not rerun the installer. Update the plugin files and run the non-mutating update check:
+
+```bash
+cd ~/plugins/browser-mutation
+git pull
+node scripts/update-codex.mjs
+```
+
+`update-codex.mjs` runs the same MCP/overlay checks as doctor and does not edit `~/.codex/config.toml` or marketplace config. Run `install-codex.mjs` only for first install or deliberate config repair.
 
 ## Current Codex MCP Limitation
 

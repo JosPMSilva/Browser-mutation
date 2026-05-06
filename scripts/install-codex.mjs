@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -12,6 +12,9 @@ const codexConfigPath = path.join(homeDir, ".codex", "config.toml");
 const marketplacePath = path.join(homeDir, ".agents", "plugins", "marketplace.json");
 const expectedPluginPath = path.join(homeDir, "plugins", "browser-mutation");
 const args = new Set(process.argv.slice(2));
+const serverHeader = "[mcp_servers.browser_mutation]";
+const pluginHeader = '[plugins."browser-mutation@local-codex-tools"]';
+const managedHeaders = [serverHeader, pluginHeader];
 
 function toPortablePath(value) {
   return value.split(path.sep).join("/");
@@ -32,15 +35,97 @@ async function readText(filePath) {
   }
 }
 
-function replaceTomlBlock(source, header, block) {
-  const escapedHeader = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`^${escapedHeader}\\r?\\n[\\s\\S]*?(?=^\\[|\\s*$)`, "m");
+function sectionHeader(line) {
+  const match = /^\s*(\[.+\])\s*(?:#.*)?$/.exec(line);
+  return match?.[1] ?? null;
+}
+
+function lineKey(line) {
+  if (/^\s*(#|$)/.test(line)) {
+    return null;
+  }
+  const match = /^\s*([A-Za-z0-9_-]+)\s*=/.exec(line);
+  return match?.[1] ?? null;
+}
+
+function findTomlSections(source, header) {
+  const lines = source.split(/\r?\n/);
+  const sections = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (sectionHeader(lines[index]) !== header) {
+      continue;
+    }
+    let end = lines.length;
+    for (let next = index + 1; next < lines.length; next += 1) {
+      if (sectionHeader(lines[next])) {
+        end = next;
+        break;
+      }
+    }
+    sections.push({ start: index, end, lines: lines.slice(index, end) });
+  }
+  return sections;
+}
+
+function assertSingleManagedSection(source, header) {
+  const sections = findTomlSections(source, header);
+  if (sections.length > 1) {
+    throw new Error(`Duplicate section ${header} in Codex config. Refusing to edit config.toml automatically.`);
+  }
+  return sections[0] ?? null;
+}
+
+function assertNoDuplicateKeys(section, header) {
+  if (!section) {
+    return;
+  }
+  const seen = new Set();
+  for (const line of section.lines.slice(1)) {
+    const key = lineKey(line);
+    if (!key) {
+      continue;
+    }
+    if (seen.has(key)) {
+      throw new Error(`Duplicate key "${key}" in ${header}. Refusing to edit config.toml automatically.`);
+    }
+    seen.add(key);
+  }
+}
+
+export function validateCodexConfig(source) {
+  for (const header of managedHeaders) {
+    const section = assertSingleManagedSection(source, header);
+    assertNoDuplicateKeys(section, header);
+  }
+}
+
+export function replaceTomlBlock(source, header, block) {
+  const section = assertSingleManagedSection(source, header);
   const normalized = block.trimEnd() + "\n\n";
-  if (pattern.test(source)) {
-    return source.replace(pattern, normalized);
+  if (section) {
+    const lines = source.split(/\r?\n/);
+    lines.splice(section.start, section.end - section.start, ...normalized.trimEnd().split("\n"));
+    return `${lines.join("\n").trimEnd()}\n`;
   }
   const prefix = source.trimEnd();
   return `${prefix}${prefix ? "\n\n" : ""}${normalized}`;
+}
+
+export function buildCodexConfig(source, options) {
+  validateCodexConfig(source);
+  let config = source;
+  config = replaceTomlBlock(config, serverHeader, [
+    serverHeader,
+    `command = ${tomlString(options.nodeCommand)}`,
+    `args = [${tomlString(options.mcpScript)}]`
+  ].join("\n"));
+
+  config = replaceTomlBlock(config, pluginHeader, [
+    pluginHeader,
+    "enabled = true"
+  ].join("\n"));
+  validateCodexConfig(config);
+  return config;
 }
 
 async function writeIfChanged(filePath, text) {
@@ -58,22 +143,9 @@ async function writeIfChanged(filePath, text) {
 }
 
 async function updateCodexConfig() {
-  const serverHeader = "[mcp_servers.browser_mutation]";
-  const pluginHeader = '[plugins."browser-mutation@local-codex-tools"]';
   const mcpScript = toPortablePath(path.join(repoRoot, "scripts", "browser-mutation-mcp.mjs"));
   const nodeCommand = process.execPath;
-  let config = await readText(codexConfigPath);
-
-  config = replaceTomlBlock(config, serverHeader, [
-    serverHeader,
-    `command = ${tomlString(nodeCommand)}`,
-    `args = [${tomlString(mcpScript)}]`
-  ].join("\n"));
-
-  config = replaceTomlBlock(config, pluginHeader, [
-    pluginHeader,
-    "enabled = true"
-  ].join("\n"));
+  const config = buildCodexConfig(await readText(codexConfigPath), { nodeCommand, mcpScript });
 
   const changed = await writeIfChanged(codexConfigPath, config);
   console.log(`${changed ? "Updated" : "Already configured"} ${codexConfigPath}`);
@@ -134,12 +206,21 @@ async function updateMarketplace() {
   }
 }
 
-await updateCodexConfig();
-await updateMarketplace();
-console.log("");
-console.log("Next steps:");
-console.log("1. Restart Codex Desktop.");
-console.log("2. Open Plugins.");
-console.log("3. Open Local Codex Tools, then Browser Mutation.");
-console.log("4. Click Add to Codex or enable Browser Mutation if it is not already enabled.");
-console.log("5. Make sure both the Browser_mutation MCP server and Mutation skill toggles are enabled.");
+export async function main() {
+  await updateCodexConfig();
+  await updateMarketplace();
+  console.log("");
+  console.log("Next steps:");
+  console.log("1. Restart Codex Desktop.");
+  console.log("2. Open Plugins.");
+  console.log("3. Open Local Codex Tools, then Browser Mutation.");
+  console.log("4. Click Add to Codex or enable Browser Mutation if it is not already enabled.");
+  console.log("5. Make sure both the Browser_mutation MCP server and Mutation skill toggles are enabled.");
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}

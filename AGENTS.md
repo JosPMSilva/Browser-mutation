@@ -34,6 +34,17 @@ node scripts/doctor.mjs
 
 The installer writes user-specific absolute paths into the user's own Codex config.
 
+## Update Contract
+
+If the user asks to update an existing Browser Mutation install from git, do not run the installer. From `~/plugins/browser-mutation`, run:
+
+```bash
+git pull
+node scripts/update-codex.mjs
+```
+
+Normal updates must not edit `~/.codex/config.toml`. Run `install-codex.mjs` only for first install or explicit config repair.
+
 ## Runtime Use
 
 Known Codex limitation: a Codex session may show the Browser Mutation skill while not exposing `browser_mutation_*` MCP tools. Do not spend time repeatedly debugging local plugin MCP registration during a user's UI-edit task. If the tools are absent, start the collector with:

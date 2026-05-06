@@ -120,7 +120,7 @@
 
   const state = {
     selected: null,
-    mode: "select",
+    mode: "interact",
     panelDrag: null,
     panelResize: null,
     drag: null,
@@ -131,6 +131,7 @@
     redoStack: [],
     notes: "",
     lastSentAt: null,
+    lastSentFingerprint: null,
     panelOpen: true,
     panelCollapsed: false,
     panelExpandedSize: null,
@@ -172,6 +173,7 @@
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        pointer-events: auto;
       }
       #${rootId} [data-role="body"] {
         min-height: 0;
@@ -278,6 +280,14 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 5px;
       }
+      #${rootId} .cbm-mode-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+      }
+      #${rootId} .cbm-mode-row button {
+        min-height: 26px;
+      }
       #${rootId} .cbm-state-row button {
         min-height: 24px;
         padding: 3px 6px;
@@ -290,6 +300,55 @@
       #${rootId} .cbm-send-actions {
         grid-template-columns: 120px 30px 1fr repeat(2, 30px);
         align-items: center;
+      }
+      #${rootId} .cbm-action-menu {
+        position: relative;
+        width: 30px;
+        height: 30px;
+      }
+      #${rootId} .cbm-action-menu > .cbm-icon {
+        width: 30px;
+        height: 30px;
+      }
+      #${rootId} .cbm-action-menu-list {
+        position: absolute;
+        right: 0;
+        bottom: 36px;
+        z-index: 20;
+        display: grid;
+        gap: 3px;
+        width: 168px;
+        padding: 5px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 9px;
+        background: #242424;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+      }
+      #${rootId} .cbm-action-menu-list[hidden] {
+        display: none;
+      }
+      #${rootId} .cbm-action-menu-list button {
+        min-height: 28px;
+        justify-content: flex-start;
+        padding: 4px 8px;
+        text-align: left;
+      }
+      #${rootId} .cbm-notes {
+        display: grid;
+        gap: 4px;
+      }
+      #${rootId} .cbm-notes-head {
+        display: grid;
+        grid-template-columns: 1fr max-content;
+        gap: 6px;
+        align-items: center;
+        color: #a1a1aa;
+        font-weight: 650;
+      }
+      #${rootId} .cbm-notes-head button {
+        min-height: 24px;
+        padding: 3px 8px;
+        white-space: nowrap;
       }
       #${rootId} .cbm-style-actions {
         grid-template-columns: max-content 1fr max-content;
@@ -709,6 +768,7 @@
         letter-spacing: 0;
         cursor: move;
         user-select: none;
+        pointer-events: auto;
       }
       #${launcherId}:hover {
         background: #ffffff;
@@ -1059,8 +1119,29 @@
     return state.originals.get(element);
   }
 
+  function selectedElement(options = {}) {
+    if (!state.selected) {
+      return null;
+    }
+    if (state.selected.isConnected) {
+      return state.selected;
+    }
+    state.selected = null;
+    state.mode = "interact";
+    syncHoverPreview();
+    syncModeButtons();
+    if (!options.skipPanel) {
+      updatePanel();
+    }
+    if (!options.silent) {
+      updateStatus("Selected element is no longer on the page");
+    }
+    return null;
+  }
+
   function record(action, element, extra) {
-    if (!element) {
+    if (!element || !element.isConnected) {
+      updateStatus("Element is no longer on the page");
       return;
     }
     const entry = {
@@ -1073,7 +1154,68 @@
     };
     state.records.push(entry);
     state.redoStack = [];
+    const undo = state.undoStack[state.undoStack.length - 1];
+    if (undo && !undo.recordId && action !== "selected" && action !== "capture") {
+      undo.recordId = entry.id;
+    }
     updateStatus(`${state.records.length} record${state.records.length === 1 ? "" : "s"} captured`);
+  }
+
+  function pendingNoteRecord() {
+    const notes = state.notes.trim();
+    if (!notes) {
+      return null;
+    }
+    const selected = selectedElement({ silent: true });
+    if (!selected) {
+      return {
+        id: cryptoRandomId(),
+        action: "note",
+        notes,
+        before: null,
+        after: null,
+        extra: { noteOnly: true, scope: "session" }
+      };
+    }
+    const selectedSnapshot = originalFor(selected);
+    return {
+      id: cryptoRandomId(),
+      action: "note",
+      notes,
+      before: selectedSnapshot,
+      after: selectedSnapshot,
+      extra: { noteOnly: true, scope: "element" }
+    };
+  }
+
+  function addNoteRecord() {
+    const entry = pendingNoteRecord();
+    if (!entry) {
+      updateStatus("Add note text first");
+      return null;
+    }
+    state.records.push(entry);
+    state.redoStack = [];
+    clearNotes({ silent: true });
+    updateStatus(entry.extra?.scope === "element" ? "Added selected-element note" : "Added session note");
+    return entry;
+  }
+
+  function recordsForSend(pendingNote = pendingNoteRecord()) {
+    return pendingNote ? [...state.records, pendingNote] : state.records;
+  }
+
+  function sentStatus(recordCount, pendingNote) {
+    if (recordCount === 0) {
+      return "Nothing to send";
+    }
+    if (recordCount === 1 && state.records.length === 0 && pendingNote?.extra?.scope === "element") {
+      return "Sent 1 note for selected element to Codex.";
+    }
+    if (recordCount === 1 && state.records.length === 0 && pendingNote?.extra?.scope === "session") {
+      return "Sent 1 session note to Codex.";
+    }
+    return `Sent ${recordCount} record${recordCount === 1 ? "" : "s"} to Codex.`;
   }
 
   function renderHoverStyles() {
@@ -1173,12 +1315,35 @@
   }
 
   function undoLast() {
+    const lastRecord = state.records[state.records.length - 1];
+    if (lastRecord?.extra?.noteOnly) {
+      const removed = state.records.pop();
+      state.redoStack.push({ kind: "record", record: removed });
+      setNotes(removed.notes || "");
+      updateStatus("Removed last note");
+      return;
+    }
     const undo = state.undoStack.pop();
     if (!undo) {
+      if (state.records.length > 0) {
+        const removed = state.records.pop();
+        state.redoStack.push({ kind: "record", record: removed });
+        updateStatus("Removed last record");
+        return;
+      }
       updateStatus("Nothing to undo");
       return;
     }
-    const recordEntry = state.records.pop() || null;
+    let recordEntry = null;
+    if (undo.recordId) {
+      const recordIndex = state.records.findIndex((record) => record.id === undo.recordId);
+      if (recordIndex >= 0) {
+        recordEntry = state.records.splice(recordIndex, 1)[0];
+      }
+    }
+    if (!recordEntry) {
+      recordEntry = state.records.pop() || null;
+    }
     const redo = undo.element?.isConnected ? { kind: "restore", undo: captureUndo(undo.element), record: recordEntry } : { kind: "delete", element: undo.element, record: recordEntry };
     restoreUndo(undo);
     if (redo.undo || redo.element) {
@@ -1193,8 +1358,18 @@
       updateStatus("Nothing to redo");
       return;
     }
+    if (redo.kind === "record" && redo.record) {
+      state.records.push(redo.record);
+      clearNotes({ silent: true });
+      updateStatus("Redid last record");
+      return;
+    }
     if (redo.kind === "delete" && redo.element) {
-      pushUndo(redo.element);
+      const undo = captureUndo(redo.element);
+      if (undo) {
+        undo.recordId = redo.record?.id;
+        state.undoStack.push(undo);
+      }
       redo.element.remove();
       if (state.selected === redo.element) {
         state.selected = null;
@@ -1203,6 +1378,7 @@
       const undo = captureUndo(redo.undo.element);
       restoreUndo(redo.undo);
       if (undo) {
+        undo.recordId = redo.record?.id;
         state.undoStack.push(undo);
       }
     }
@@ -1220,14 +1396,15 @@
 
   function updateOutline() {
     const outline = document.getElementById(outlineId);
-    if (!outline || !state.selected || !state.panelOpen) {
+    const selected = selectedElement({ silent: true, skipPanel: true });
+    if (!outline || !selected || !state.panelOpen) {
       if (outline) {
         outline.style.display = "none";
       }
       return;
     }
     outline.style.display = "block";
-    const rect = state.selected.getBoundingClientRect();
+    const rect = selected.getBoundingClientRect();
     outline.style.left = `${Math.round(rect.left)}px`;
     outline.style.top = `${Math.round(rect.top)}px`;
     outline.style.width = `${Math.round(rect.width)}px`;
@@ -1235,6 +1412,12 @@
   }
 
   function updatePanel() {
+    if (state.selected && !state.selected.isConnected) {
+      state.selected = null;
+      state.mode = "interact";
+      syncHoverPreview();
+      syncModeButtons();
+    }
     const selectedMeta = document.querySelector(`#${rootId} [data-role="selected"]`);
     if (selectedMeta) {
       selectedMeta.textContent = state.selected ? `${state.selected.localName} ${trimText(getElementText(state.selected), 60)}` : "No element selected";
@@ -2267,49 +2450,54 @@
     updatePanel();
   }
 
-  function clearSelection() {
+  function clearSelection(options = {}) {
     state.selected = null;
-    state.mode = "select";
+    state.mode = "interact";
     syncHoverPreview();
     syncModeButtons();
-    updateStatus("Selection cleared");
+    updatePanel();
+    if (!options.silent) {
+      updateStatus("Selection cleared");
+    }
   }
 
   function applyText() {
-    if (!state.selected) {
+    const selected = selectedElement();
+    if (!selected) {
       return;
     }
-    pushUndo(state.selected);
+    pushUndo(selected);
     const input = document.querySelector(`#${rootId} [data-role="text"]`);
     const value = input ? input.value : "";
-    if (state.selected instanceof HTMLInputElement || state.selected instanceof HTMLTextAreaElement) {
-      state.selected.value = value;
-      state.selected.dispatchEvent(new Event("input", { bubbles: true }));
+    if (selected instanceof HTMLInputElement || selected instanceof HTMLTextAreaElement) {
+      selected.value = value;
+      selected.dispatchEvent(new Event("input", { bubbles: true }));
     } else {
-      state.selected.textContent = value;
+      selected.textContent = value;
     }
-    record("text", state.selected, { value });
+    record("text", selected, { value });
   }
 
   function applyStyles() {
-    if (!state.selected) {
+    const selected = selectedElement();
+    if (!selected) {
       return;
     }
     document.querySelectorAll(`#${rootId} [data-style]`).forEach((input) => previewStyleInput(input));
-    const preview = state.stylePreviews.get(state.selected);
+    const preview = state.stylePreviews.get(selected);
     const changed = { ...currentPreviewChanges(preview) };
     if (!Object.keys(changed).length) {
       updateStatus("No preview changes to record");
       return;
     }
-    const undo = stylePreviewUndo(state.selected, preview, state.styleState);
+    const undo = stylePreviewUndo(selected, preview, state.styleState);
     if (undo) {
       state.undoStack.push(undo);
     }
     if (state.styleState === "hover") {
-      const hoverId = ensureHoverId(state.selected);
+      const hoverId = ensureHoverId(selected);
       markAppliedFields(changed);
-      record("state-style", state.selected, {
+      record("state-style", selected, {
         state: "hover",
         selector: `[data-cbm-hover-id="${hoverId}"]:hover`,
         styles: changed
@@ -2317,7 +2505,7 @@
       preview.hoverChanged = {};
       preview.hoverBaseStyles = new Map(state.hoverStyles);
       if (!hasPreviewChanges(preview)) {
-        clearElementStylePreview(state.selected);
+        clearElementStylePreview(selected);
       }
       return;
     }
@@ -2327,11 +2515,11 @@
       }
     }
     markAppliedFields(changed);
-    record("style", state.selected, changed);
+    record("style", selected, changed);
     preview.normalChanged = {};
-    preview.normalBaseInlineStyle = state.selected.getAttribute("style");
+    preview.normalBaseInlineStyle = selected.getAttribute("style");
     if (!hasPreviewChanges(preview)) {
-      clearElementStylePreview(state.selected);
+      clearElementStylePreview(selected);
     }
   }
 
@@ -2647,7 +2835,7 @@
     const beforeParent = state.selected.parentElement ? getIdentity(state.selected.parentElement) : null;
     pushUndo(state.selected);
     target.appendChild(state.selected);
-    state.mode = "select";
+    state.mode = "interact";
     syncModeButtons();
     record("reparent", state.selected, { beforeParent, afterParent: getIdentity(target) });
   }
@@ -2831,17 +3019,55 @@
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 16);
   }
 
-  async function sendSession() {
-    const payload = {
+  function sessionPayload(records = recordsForSend()) {
+    return {
       page: {
         url: location.href,
         title: document.title,
         viewport: { width: window.innerWidth, height: window.innerHeight },
         scroll: { x: window.scrollX, y: window.scrollY }
       },
-      notes: state.notes,
-      records: state.records
+      notes: records.length === 0 ? state.notes.trim() : "",
+      records
     };
+  }
+
+  function payloadFingerprint(payload) {
+    return JSON.stringify({
+      notes: payload.notes,
+      records: payload.records
+    });
+  }
+
+  function setNotes(value) {
+    state.notes = value;
+    const input = document.querySelector(`#${rootId} [data-role="notes"]`);
+    if (input && input.value !== value) {
+      input.value = value;
+    }
+  }
+
+  function clearNotes(options = {}) {
+    setNotes("");
+    if (!options.silent) {
+      updateStatus("Cleared notes");
+    }
+  }
+
+  async function sendSession() {
+    const pendingNote = pendingNoteRecord();
+    const records = recordsForSend(pendingNote);
+    if (records.length === 0) {
+      updateStatus("Nothing to send");
+      return;
+    }
+    const payload = sessionPayload(records);
+    const fingerprint = payloadFingerprint(payload);
+    if (state.lastSentFingerprint === fingerprint) {
+      updateStatus("Already sent. Add or clear records before sending again.");
+      return;
+    }
+    const status = sentStatus(records.length, pendingNote);
     const response = await fetch(`http://127.0.0.1:${collectorPort}/__browser-mutation/mutation`, {
       method: "POST",
       headers: {
@@ -2853,12 +3079,18 @@
     if (!response.ok) {
       throw new Error(await response.text());
     }
+    if (pendingNote) {
+      state.records.push(pendingNote);
+      state.redoStack = [];
+    }
     state.lastSentAt = new Date().toISOString();
-    updateStatus(`Sent ${state.records.length} record${state.records.length === 1 ? "" : "s"} to Codex.`);
+    state.lastSentFingerprint = fingerprint;
+    clearNotes({ silent: true });
+    updateStatus(status);
   }
 
   async function copySession() {
-    const text = JSON.stringify({ notes: state.notes, records: state.records }, null, 2);
+    const text = JSON.stringify(sessionPayload(), null, 2);
     try {
       await navigator.clipboard.writeText(text);
       updateStatus("Copied mutation JSON");
@@ -2882,7 +3114,7 @@
   }
 
   function downloadSessionJson() {
-    const blob = new Blob([JSON.stringify({ notes: state.notes, records: state.records }, null, 2)], {
+    const blob = new Blob([JSON.stringify(sessionPayload(), null, 2)], {
       type: "application/json"
     });
     const anchor = document.createElement("a");
@@ -2897,23 +3129,45 @@
     updateStatus("Downloaded mutation JSON file");
   }
 
-  function clearSession() {
+  function clearSession(options = {}) {
     state.records = [];
     state.undoStack = [];
     state.redoStack = [];
     state.originals = new WeakMap();
     state.stylePreviews = new Map();
+    state.lastSentFingerprint = null;
     if (state.selected) {
       originalFor(state.selected);
     }
-    updateStatus("Cleared records");
+    if (!options.silent) {
+      updateStatus("Cleared records");
+    }
+  }
+
+  function clearAll() {
+    clearSession({ silent: true });
+    clearSelection({ silent: true });
+    clearNotes({ silent: true });
+    updateStatus("Cleared selection, notes, and records");
+  }
+
+  function markSentAndClear() {
+    if (!state.lastSentAt) {
+      updateStatus("Nothing sent yet");
+      return;
+    }
+    clearSession({ silent: true });
+    clearSelection({ silent: true });
+    clearNotes({ silent: true });
+    updateStatus("Marked sent and cleared");
   }
 
   function deleteSelected() {
-    if (!state.selected || !state.selected.parentElement) {
+    const selected = selectedElement();
+    if (!selected || !selected.parentElement) {
       return;
     }
-    const element = state.selected;
+    const element = selected;
     const parent = getParentInfo(element);
     const index = getIndex(element);
     pushUndo(element);
@@ -2924,9 +3178,18 @@
   }
 
   function setMode(mode) {
-    state.mode = state.mode === mode ? "select" : mode;
+    const validModes = new Set(["interact", "select", "move", "parent"]);
+    const nextMode = validModes.has(mode) ? mode : "interact";
+    state.mode = state.mode === nextMode && nextMode !== "interact" ? "interact" : nextMode;
     syncModeButtons();
-    updateStatus(`Mode: ${state.mode}`);
+    updateStatus(modeStatus());
+  }
+
+  function modeStatus() {
+    if (state.mode === "select") return "Select mode armed. Next page click selects an element.";
+    if (state.mode === "move") return "Move mode. Drag the selected element.";
+    if (state.mode === "parent") return "Reparent mode. Click the new parent.";
+    return "Interact mode. Page clicks pass through; Alt+Click selects.";
   }
 
   function syncModeButtons() {
@@ -2961,12 +3224,16 @@
         </div>
         <div class="cbm-actions">
           <button class="cbm-icon" type="button" data-action="toggle" title="Minimize" aria-label="Minimize">${icons.min}</button>
-          <button class="cbm-icon" type="button" data-action="close" title="Dock panel to launcher" aria-label="Dock panel to launcher">${icons.dock}</button>
+          <button class="cbm-icon" type="button" data-action="close" title="Dock panel to launcher (Ctrl+Alt+D)" aria-label="Dock panel to launcher">${icons.dock}</button>
         </div>
       </div>
       <div class="cbm-body" data-role="body">
         <div class="cbm-row">
           <div class="cbm-meta" data-role="selected">No element selected</div>
+          <div class="cbm-mode-row" role="group" aria-label="Interaction mode">
+            <button type="button" data-mode="interact" title="Ctrl+Alt+I">Interact</button>
+            <button type="button" data-mode="select" title="Ctrl+Alt+S" aria-label="Select element">Select element</button>
+          </div>
           <div class="cbm-tool-grid">
             <button class="cbm-icon" type="button" data-mode="move" title="Move selected element" aria-label="Move selected element">${icons.move}</button>
             <button class="cbm-icon" type="button" data-mode="parent" title="Reparent selected element" aria-label="Reparent selected element">${icons.parent}</button>
@@ -3080,15 +3347,31 @@
           <span aria-hidden="true"></span>
           <button type="button" data-action="reset-style">Reset preview</button>
         </div>
-        <label>Notes<textarea data-role="notes" placeholder="Optional intent notes for Codex"></textarea></label>
+        <div class="cbm-notes">
+          <div class="cbm-notes-head">
+            <span>Notes</span>
+            <button type="button" data-action="add-note" title="Record note for selected element, or session if no element is selected">Add note</button>
+          </div>
+          <textarea data-role="notes" placeholder="Optional intent notes for Codex"></textarea>
+        </div>
         <div class="cbm-footer cbm-send-actions">
           <button type="button" data-primary="true" data-action="send">${icons.send}<span>Send</span></button>
-          <button class="cbm-icon" type="button" data-action="clear" title="Clear records" aria-label="Clear records">${icons.clear}</button>
+          <div class="cbm-action-menu">
+            <button class="cbm-icon" type="button" data-action="clear-menu" title="Clear actions" aria-label="Clear actions" aria-haspopup="menu" aria-expanded="false">${icons.clear}</button>
+            <div class="cbm-action-menu-list" data-role="clear-menu" hidden>
+              <button type="button" data-action="clear-selection">Clear selection</button>
+              <button type="button" data-action="clear-notes">Clear notes</button>
+              <button type="button" data-action="clear">Clear records</button>
+              <button type="button" data-action="undo-record">Undo last record</button>
+              <button type="button" data-action="mark-sent-clear">Mark sent and clear</button>
+              <button type="button" data-action="clear-all">Clear all</button>
+            </div>
+          </div>
           <span aria-hidden="true"></span>
           <button class="cbm-icon" type="button" data-action="copy" title="Copy JSON" aria-label="Copy JSON">${icons.json}</button>
           <button class="cbm-icon" type="button" data-action="export" title="Download JSON file" aria-label="Download JSON file">${icons.export}</button>
         </div>
-        <div class="cbm-status" data-role="status">Click an element to select it.</div>
+        <div class="cbm-status" data-role="status">Interact mode. Page clicks pass through; Alt+Click selects.</div>
       </div>
       <div class="cbm-panel-resize" data-role="panel-resize" title="Resize panel" aria-hidden="true"></div>
     `;
@@ -3101,7 +3384,14 @@
       handle.addEventListener("pointerdown", beginPanelResize);
     });
     root.querySelector("[data-role='notes']").addEventListener("input", (event) => {
-      state.notes = event.target.value;
+      setNotes(event.target.value);
+    });
+    root.querySelector("[data-role='notes']").addEventListener("keydown", (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+        addNoteRecord();
+      }
     });
     root.querySelectorAll("[data-state-style]").forEach((button) => {
       button.addEventListener("click", () => setStyleState(button.dataset.stateStyle));
@@ -3209,6 +3499,7 @@
       });
     });
     root.querySelector("[data-role='icon-file']")?.addEventListener("change", importSvgFile);
+    syncModeButtons();
     schedulePanelHeightFit();
   }
 
@@ -3475,6 +3766,24 @@
     schedulePanelHeightFit({ forceExpand: true });
   }
 
+  function setClearMenuOpen(open) {
+    const menu = document.querySelector(`#${rootId} [data-role="clear-menu"]`);
+    const toggle = document.querySelector(`#${rootId} [data-action="clear-menu"]`);
+    if (!menu) {
+      return;
+    }
+    menu.hidden = !open;
+    menu.dataset.open = String(open);
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", String(open));
+    }
+  }
+
+  function toggleClearMenu() {
+    const menu = document.querySelector(`#${rootId} [data-role="clear-menu"]`);
+    setClearMenuOpen(!menu || menu.hidden);
+  }
+
   function onPanelClick(event) {
     const popToggle = event.target?.closest?.("[data-pop-toggle]");
     if (popToggle) {
@@ -3501,14 +3810,25 @@
     const action = control?.dataset?.action;
     const mode = control?.dataset?.mode;
     if (mode) {
+      setClearMenuOpen(false);
       setMode(mode);
       return;
     }
     if (!action) {
+      if (!event.target?.closest?.("[data-role='clear-menu']")) {
+        setClearMenuOpen(false);
+      }
       return;
     }
     event.preventDefault();
+    if (action !== "clear-menu") {
+      setClearMenuOpen(false);
+    }
     if (action === "close") hidePanel();
+    if (action === "clear-menu") {
+      toggleClearMenu();
+      return;
+    }
     if (action === "font-menu") {
       const field = control.closest("[data-role='typeface-field']");
       if (field) {
@@ -3538,7 +3858,10 @@
     if (action === "reset-style") resetSelectedStylePreview();
     if (action === "prev") moveSibling(-1);
     if (action === "next") moveSibling(1);
-    if (action === "capture" && state.selected) record("capture", state.selected);
+    if (action === "capture") {
+      const selected = selectedElement();
+      if (selected) record("capture", selected);
+    }
     if (action === "delete") deleteSelected();
     if (action === "undo") undoLast();
     if (action === "redo") redoLast();
@@ -3546,9 +3869,15 @@
     if (action === "icon-swap") swapIcon();
     if (action === "icon-import") openIconImport();
     if (action === "send") sendSession().catch((error) => updateStatus(error.message));
+    if (action === "add-note") addNoteRecord();
     if (action === "copy") copySession().catch((error) => updateStatus(error.message));
     if (action === "export") exportSession();
     if (action === "clear") clearSession();
+    if (action === "clear-selection") clearSelection();
+    if (action === "clear-notes") clearNotes();
+    if (action === "clear-all") clearAll();
+    if (action === "undo-record") undoLast();
+    if (action === "mark-sent-clear") markSentAndClear();
     if (action === "save-color") saveCurrentColor();
     if (action === "eyedropper") pickWithEyeDropper();
   }
@@ -3597,9 +3926,16 @@
       pickParent(event.target);
       return;
     }
+    const shouldSelect = state.mode === "select" || event.altKey;
+    if (!shouldSelect) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     selectElement(event.target, { record: event.altKey });
+    if (state.mode === "select") {
+      setMode("interact");
+    }
   }
 
   function onPointerDown(event) {
@@ -3630,6 +3966,26 @@
   function onKeyDown(event) {
     const key = String(event.key || "").toLowerCase();
     const accelerator = event.ctrlKey || event.metaKey;
+    if (state.panelOpen && event.ctrlKey && event.altKey && !event.metaKey) {
+      if (key === "i") {
+        event.preventDefault();
+        event.stopPropagation();
+        setMode("interact");
+        return;
+      }
+      if (key === "s") {
+        event.preventDefault();
+        event.stopPropagation();
+        setMode("select");
+        return;
+      }
+      if (key === "d") {
+        event.preventDefault();
+        event.stopPropagation();
+        hidePanel();
+        return;
+      }
+    }
     if (state.panelOpen && accelerator && !event.altKey && !isEditableTarget(event.target)) {
       if (key === "z" && !event.shiftKey) {
         event.preventDefault();
@@ -3685,6 +4041,7 @@
   window.__codexBrowserMutation = {
     getState: () => ({
       selected: state.selected,
+      mode: state.mode,
       records: state.records,
       notes: state.notes,
       lastSentAt: state.lastSentAt

@@ -517,7 +517,7 @@ async function handleRequest(message) {
       sendResult(message.id, {
         protocolVersion: message.params?.protocolVersion ?? "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "browser-mutation", version: "0.1.0" }
+        serverInfo: { name: "browser-mutation", version: "0.1.2" }
       });
       return;
     }
