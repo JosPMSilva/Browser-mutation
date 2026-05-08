@@ -82,7 +82,9 @@ Use the Browser Use skill's current setup instructions for the in-app browser ru
 
 When Browser Mutation is active, plain page interaction must remain possible. Use DOM locators for app controls where practical. Coordinate clicks should only be used for app interaction when Browser Mutation is in Interact/pass-through mode. Element selection should be explicitly armed with Select mode or modifier click.
 
-Mode shortcuts in the overlay are `Ctrl+Alt+I` for Interact, `Ctrl+Alt+S` for Select element, and `Ctrl+Alt+D` to dock the panel to the launcher. Notes are sent as explicit `action: "note"` records. If an element is selected, the note is tied to that element; otherwise it is a session note. `Ctrl+Enter` in the notes field adds the note. Pending notes are included automatically on Send, successful sends clear the notes field, and duplicate identical sends are blocked until records change. Do not rely on top-level payload notes when records are present.
+Mode shortcuts in the overlay are `Ctrl+Alt+I` for Interact, `Ctrl+Alt+S` for Select element, and `Ctrl+Alt+D` to dock the panel to the launcher. During move drags, `Shift` locks the active axis, `C` restricts snapping to center alignment, and `Alt` bypasses snapping. Move drags are staged first: the move button turns into a check icon, and the user records the final position by clicking the check. Sending auto-commits one staged move before posting the payload. Notes are sent as explicit `action: "note"` records. If an element is selected, the note is tied to that element; otherwise it is a session note. `Ctrl+Enter` in the notes field adds the note. Pending notes are included automatically on Send, successful sends clear the notes field, and duplicate identical sends are blocked until records change. Do not rely on top-level payload notes when records are present.
+
+Move mode shows nearby DOM alignment guides and spacing labels while dragging. Snap lines and spacing lines are visually distinct. Hold `Shift` to lock movement to the dominant axis, hold `C` for center-only snapping, or hold `Alt` to bypass snapping temporarily. Move capture should use the staged checkmark flow so the payload records the user's final position instead of intermediate drag noise.
 
 ## Translation Rules
 
@@ -112,7 +114,7 @@ Each record includes:
 - `react`: best-effort React Fiber source hints when available in dev mode.
 - `parent`, `index`, and `siblings`: surrounding layout context.
 - `rect` and `styles`: before/after geometry and selected computed styles.
-- `extra`: action-specific implementation intent. Note records include `extra.noteOnly: true` and `extra.scope` of `element` or `session`.
+- `extra`: action-specific implementation intent. Note records include `extra.noteOnly: true` and `extra.scope` of `element` or `session`. Move records include start/end points, delta, axis lock state, center-only state, snapped references, spacing, landing references, candidate count, and snap thresholds.
 - `notes`: optional user notes from the overlay.
 
 ## Limits
