@@ -5,12 +5,19 @@
   const collectorToken = "__CODEX_BROWSER_MUTATION_TOKEN__";
   const rootId = "codex-browser-mutation-root";
   const outlineId = "codex-browser-mutation-outline";
+  const guideLayerId = "codex-browser-mutation-guides";
   const launcherId = "codex-browser-mutation-launcher";
   const styleId = "codex-browser-mutation-style";
   const hoverStyleId = "codex-browser-mutation-hover-style";
   const previewStateKey = "__codexBrowserMutationStylePreview";
   const panelMinWidth = 340;
   const panelMinHeight = 176;
+  const snapThreshold = 6;
+  const snapCandidateRadius = 240;
+  const guideLogic = globalThis.__codexBrowserMutationGuideLogic;
+  if (!guideLogic) {
+    throw new Error("Browser Mutation move guide logic was not loaded.");
+  }
   const styleProps = [
     "display",
     "position",
@@ -73,8 +80,10 @@
     clear: `<svg viewBox="0 0 256 256" aria-hidden="true"><line x1="200" y1="56" x2="56" y2="200"/><line x1="56" y1="56" x2="200" y2="200"/></svg>`,
     delete: `<svg viewBox="0 0 256 256" aria-hidden="true"><line x1="216" y1="56" x2="40" y2="56"/><line x1="104" y1="104" x2="104" y2="168"/><line x1="152" y1="104" x2="152" y2="168"/><path d="M200,56V208a8,8,0,0,1-8,8H64a8,8,0,0,1-8-8V56"/><path d="M168,56V40a16,16,0,0,0-16-16H104A16,16,0,0,0,88,40V56"/></svg>`,
     undo: `<svg viewBox="0 0 256 256" aria-hidden="true"><path d="M80,80H168a56,56,0,0,1,0,112H96"/><polyline points="112 48 80 80 112 112"/></svg>`,
+    check: `<svg viewBox="0 0 256 256" aria-hidden="true"><polyline points="40 136 96 192 216 64"/></svg>`,
     min: `<svg viewBox="0 0 256 256" aria-hidden="true"><line x1="40" y1="128" x2="216" y2="128"/></svg>`,
     dock: `<svg viewBox="0 0 256 256" aria-hidden="true"><rect x="48" y="40" width="160" height="176" rx="18"/><circle cx="128" cy="128" r="34"/><polyline points="116 116 128 128 140 116"/><polyline points="116 140 128 128 140 140"/></svg>`,
+    info: `<span class="cbm-info-icon" aria-hidden="true">i</span>`,
     textStyle: `<span class="cbm-text-style-icon" aria-hidden="true">B</span>`,
     icon: `<svg viewBox="0 0 256 256" aria-hidden="true"><rect x="40" y="40" width="176" height="176" rx="24"/><path d="M96,144l32-32 32,32"/><circle cx="96" cy="88" r="12"/></svg>`,
     import: `<svg viewBox="0 0 256 256" aria-hidden="true"><path d="M48,216H208"/><path d="M128,32V168"/><polyline points="80 80 128 32 176 80"/></svg>`
@@ -124,6 +133,8 @@
     panelDrag: null,
     panelResize: null,
     drag: null,
+    pendingMove: null,
+    lastMoveGuide: null,
     resize: null,
     originals: new WeakMap(),
     records: [],
@@ -132,6 +143,7 @@
     notes: "",
     lastSentAt: null,
     lastSentFingerprint: null,
+    centerSnapKey: false,
     panelOpen: true,
     panelCollapsed: false,
     panelExpandedSize: null,
@@ -200,11 +212,17 @@
       #${rootId} .cbm-panel-resize {
         position: absolute;
         z-index: 2;
-        right: 0;
         bottom: 0;
         width: 22px;
         height: 22px;
+      }
+      #${rootId} .cbm-panel-resize[data-resize-corner="br"] {
+        right: 0;
         cursor: nwse-resize;
+      }
+      #${rootId} .cbm-panel-resize[data-resize-corner="bl"] {
+        left: 0;
+        cursor: nesw-resize;
       }
       #${rootId} button,
       #${rootId} input,
@@ -214,6 +232,7 @@
         letter-spacing: 0;
       }
       #${rootId} .cbm-head {
+        position: relative;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -255,6 +274,68 @@
         display: flex;
         flex-wrap: wrap;
         gap: 5px;
+      }
+      #${rootId} .cbm-head-help {
+        position: static;
+      }
+      #${rootId} .cbm-info-icon {
+        display: inline-grid;
+        place-items: center;
+        width: 16px;
+        height: 16px;
+        border: 1.5px solid currentColor;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 850;
+        font-style: normal;
+        line-height: 1;
+      }
+      #${rootId} .cbm-hotkeys-menu {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        top: 44px;
+        z-index: 24;
+        width: auto;
+        max-height: min(360px, calc(100vh - 76px));
+        overflow: auto;
+        padding: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 9px;
+        background: #242424;
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.38);
+        cursor: default;
+      }
+      #${rootId} .cbm-hotkeys-menu[hidden] {
+        display: none;
+      }
+      #${rootId} .cbm-hotkeys-title {
+        margin-bottom: 6px;
+        color: #fafafa;
+        font-size: 11px;
+        font-weight: 750;
+      }
+      #${rootId} .cbm-hotkey-row {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 10px;
+        align-items: baseline;
+        padding: 4px 2px;
+        color: #d4d4d8;
+      }
+      #${rootId} .cbm-hotkey-row span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      #${rootId} .cbm-hotkey-row kbd {
+        min-width: 78px;
+        padding: 2px 5px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 5px;
+        color: #f4f4f5;
+        background: rgba(255, 255, 255, 0.06);
+        font: 700 10px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        text-align: center;
       }
       #${rootId} .cbm-tool-grid {
         display: grid;
@@ -749,6 +830,51 @@
         pointer-events: auto;
         cursor: nwse-resize;
       }
+      #${guideLayerId} {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483645;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      #${guideLayerId} .cbm-guide-line {
+        position: absolute;
+        background: #38bdf8;
+        box-shadow: 0 0 0 1px rgba(23, 23, 23, 0.28);
+      }
+      #${guideLayerId} .cbm-guide-line[data-axis="x"] {
+        width: 1px;
+      }
+      #${guideLayerId} .cbm-guide-line[data-axis="y"] {
+        height: 1px;
+      }
+      #${guideLayerId} .cbm-spacing-line {
+        position: absolute;
+        background: rgba(217, 70, 239, 0.62);
+      }
+      #${guideLayerId} .cbm-spacing-line[data-axis="x"] {
+        height: 1px;
+      }
+      #${guideLayerId} .cbm-spacing-line[data-axis="y"] {
+        width: 1px;
+      }
+      #${guideLayerId} .cbm-guide-label {
+        position: absolute;
+        min-width: 18px;
+        height: 16px;
+        padding: 0 5px;
+        border-radius: 8px;
+        color: #ffffff;
+        background: #c026d3;
+        box-shadow: 0 1px 5px rgba(23, 23, 23, 0.24);
+        font: 750 10px/16px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        text-align: center;
+        letter-spacing: 0;
+        white-space: nowrap;
+      }
+      #${guideLayerId} .cbm-guide-label[data-kind="center"] {
+        background: #0284c7;
+      }
       #${launcherId} {
         position: fixed;
         z-index: 2147483647;
@@ -778,7 +904,7 @@
   }
 
   function isOverlayElement(target) {
-    return Boolean(target && target.closest && target.closest(`#${rootId}, #${outlineId}, #${launcherId}`));
+    return Boolean(target && target.closest && target.closest(`#${rootId}, #${outlineId}, #${guideLayerId}, #${launcherId}`));
   }
 
   function trimText(value, limit) {
@@ -1126,6 +1252,9 @@
     if (state.selected.isConnected) {
       return state.selected;
     }
+    if (state.pendingMove?.element === state.selected) {
+      state.pendingMove = null;
+    }
     state.selected = null;
     state.mode = "interact";
     syncHoverPreview();
@@ -1159,6 +1288,84 @@
       undo.recordId = entry.id;
     }
     updateStatus(`${state.records.length} record${state.records.length === 1 ? "" : "s"} captured`);
+  }
+
+  function pendingMoveForSelected() {
+    return state.pendingMove && state.selected && state.pendingMove.element === state.selected && state.selected.isConnected
+      ? state.pendingMove
+      : null;
+  }
+
+  function moveExtra(moved, moveGuide) {
+    return {
+      start: { x: moved.x, y: moved.y },
+      styleLeft: state.selected.style.left,
+      styleTop: state.selected.style.top,
+      delta: moved.lastGuide?.delta || null,
+      axisLock: moveGuide?.axisLock || null,
+      centerOnly: moveGuide?.centerOnly === true,
+      snappedTo: moved.lastGuide?.matches || [],
+      spacing: moveGuide?.spacing || [],
+      landingReferences: moveGuide?.landingReferences || [],
+      snapScope: "nearby",
+      candidateCount: moveGuide?.candidateCount ?? moved.activeCandidates?.length ?? 0,
+      snapThreshold,
+      snapCandidateRadius
+    };
+  }
+
+  function stagePendingMove(moved, moveGuide) {
+    const selected = selectedElement({ silent: true });
+    if (!selected || !moved.lastGuide) {
+      if (moved.undo) {
+        restoreUndo(moved.undo);
+      }
+      return;
+    }
+    const previous = state.pendingMove?.element === selected ? state.pendingMove : null;
+    state.pendingMove = {
+      element: selected,
+      undo: previous?.undo || moved.undo,
+      extra: moveExtra(moved, moveGuide)
+    };
+    syncModeButtons();
+    updateStatus("Move staged. Click the check to record final position.");
+  }
+
+  function commitPendingMove(options = {}) {
+    const pending = pendingMoveForSelected();
+    if (!pending) {
+      return false;
+    }
+    state.pendingMove = null;
+    if (pending.undo) {
+      state.undoStack.push(pending.undo);
+    }
+    record("move", pending.element, pending.extra);
+    syncModeButtons();
+    if (!options.silent) {
+      updateStatus("Move recorded.");
+    }
+    return true;
+  }
+
+  function cancelPendingMove(options = {}) {
+    const pending = pendingMoveForSelected();
+    if (!pending) {
+      return false;
+    }
+    state.pendingMove = null;
+    if (pending.undo) {
+      restoreUndo(pending.undo);
+    }
+    updateOutline();
+    syncModeButtons();
+    if (!options.silent) {
+      updateStatus("Move cancelled.");
+    } else if (!options.skipPanel) {
+      updatePanel();
+    }
+    return true;
   }
 
   function pendingNoteRecord() {
@@ -1210,12 +1417,12 @@
       return "Nothing to send";
     }
     if (recordCount === 1 && state.records.length === 0 && pendingNote?.extra?.scope === "element") {
-      return "Sent 1 note for selected element to Codex.";
+      return "Sent 1 note for selected element to model.";
     }
     if (recordCount === 1 && state.records.length === 0 && pendingNote?.extra?.scope === "session") {
-      return "Sent 1 session note to Codex.";
+      return "Sent 1 session note to model.";
     }
-    return `Sent ${recordCount} record${recordCount === 1 ? "" : "s"} to Codex.`;
+    return `Sent ${recordCount} record${recordCount === 1 ? "" : "s"} to model.`;
   }
 
   function renderHoverStyles() {
@@ -1315,6 +1522,9 @@
   }
 
   function undoLast() {
+    if (cancelPendingMove()) {
+      return;
+    }
     const lastRecord = state.records[state.records.length - 1];
     if (lastRecord?.extra?.noteOnly) {
       const removed = state.records.pop();
@@ -1433,8 +1643,19 @@
     const status = document.querySelector(`#${rootId} [data-role="status"]`);
     if (status) {
       status.textContent = message;
+      status.dataset.message = message;
     }
     updatePanel();
+  }
+
+  function confirmSentStatus(message) {
+    updateStatus(message);
+    requestAnimationFrame(() => {
+      const status = document.querySelector(`#${rootId} [data-role="status"]`);
+      if (status && status.dataset.message === message) {
+        status.textContent = message;
+      }
+    });
   }
 
   function setControlValue(input, value) {
@@ -2434,9 +2655,21 @@
     }
   }
 
+  function selectableElementFor(target) {
+    if (!(target instanceof Element)) {
+      return null;
+    }
+    const interactiveOwner = target.closest("button, a, summary");
+    return interactiveOwner || target;
+  }
+
   function selectElement(element, options = {}) {
+    element = selectableElementFor(element);
     if (!element || isOverlayElement(element)) {
       return;
+    }
+    if (state.pendingMove && state.pendingMove.element !== element) {
+      cancelPendingMove({ silent: true });
     }
     state.selected = element;
     originalFor(element);
@@ -2451,6 +2684,7 @@
   }
 
   function clearSelection(options = {}) {
+    cancelPendingMove({ silent: true, skipPanel: true });
     state.selected = null;
     state.mode = "interact";
     syncHoverPreview();
@@ -2724,6 +2958,307 @@
     `;
   }
 
+  function guideCandidateLabel(element, identity, classNames) {
+    if (identity.id) {
+      return `#${identity.id}`;
+    }
+    if (identity.ariaLabel) {
+      return `[aria-label="${identity.ariaLabel}"]`;
+    }
+    if (identity.testId) {
+      return `[data-testid="${identity.testId}"]`;
+    }
+    if (identity.title) {
+      return `[title="${identity.title}"]`;
+    }
+    if (identity.text) {
+      return identity.text.length > 48 ? `${identity.text.slice(0, 45)}...` : identity.text;
+    }
+    return classNames.length ? `.${classNames[0]}` : element.localName;
+  }
+
+  function rectSnapshotForGuides(element, role = "element") {
+    const rect = element.getBoundingClientRect();
+    const identity = getIdentity(element);
+    const classNames = String(identity.className || "").split(/\s+/).filter(Boolean);
+    const id = identity.cssPath || identity.id || classNames.join(".") || element.localName;
+    return {
+      id,
+      label: guideCandidateLabel(element, identity, classNames),
+      role,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      right: rect.right,
+      bottom: rect.bottom,
+      centerX: rect.left + rect.width / 2,
+      centerY: rect.top + rect.height / 2,
+      priority: guideCandidatePriority(element, role, rect)
+    };
+  }
+
+  function guideCandidatePriority(element, role, rect = element.getBoundingClientRect()) {
+    if (role === "surface") return 90;
+    if (role === "parent" || role === "ancestor") return 80;
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement || element.isContentEditable) {
+      return 85;
+    }
+    if (element.matches("button, a, summary") || element.closest("button, a, summary")) {
+      return 35;
+    }
+    if (["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "label"].includes(element.localName)) {
+      return 70;
+    }
+    if (rect.width >= 180 && rect.height >= 44) {
+      return 65;
+    }
+    return 45;
+  }
+
+  function isGuideCandidate(element, selected, role = "element") {
+    if (!element || element === selected || element === document.documentElement || element === document.body) {
+      return false;
+    }
+    if (isOverlayElement(element) || selected.contains(element)) {
+      return false;
+    }
+    const interactiveOwner = element.closest("button, a, summary");
+    if (interactiveOwner && interactiveOwner !== element) {
+      return false;
+    }
+    if (element.contains(selected) && role !== "parent" && role !== "ancestor") {
+      return false;
+    }
+    const styles = getComputedStyle(element);
+    if (styles.display === "none" || styles.visibility === "hidden" || styles.opacity === "0") {
+      return false;
+    }
+    const rect = element.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) {
+      return false;
+    }
+    if (rect.right < -80 || rect.bottom < -80 || rect.left > window.innerWidth + 80 || rect.top > window.innerHeight + 80) {
+      return false;
+    }
+    const tag = element.localName;
+    const isFormControl = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement;
+    const isInteractive = Boolean(element.closest("button, a, summary")) || element.matches("button, a, summary");
+    return guideLogic.isMeaningfulGuideCandidate({
+      tag,
+      namespace: element.namespaceURI === "http://www.w3.org/2000/svg" ? "svg" : "html",
+      display: styles.display,
+      text: getElementText(element),
+      placeholder: isFormControl ? element.getAttribute("placeholder") : "",
+      width: rect.width,
+      height: rect.height,
+      interactive: isInteractive,
+      formControl: isFormControl,
+      contentEditable: element.isContentEditable,
+      iconRoot: tag === "svg" || tag === "img" || tag === "canvas",
+      hasRole: element.hasAttribute("role"),
+      hasAriaLabel: element.hasAttribute("aria-label"),
+      hasTestId: element.hasAttribute("data-testid") || element.hasAttribute("data-test-id")
+    });
+  }
+
+  function moveSurfaceFor(selected) {
+    const selectedRect = selected.getBoundingClientRect();
+    let current = selected.parentElement;
+    while (current && current !== document.body && current !== document.documentElement) {
+      const rect = current.getBoundingClientRect();
+      const hasUsefulScale = rect.width >= selectedRect.width * 1.5 && rect.height >= selectedRect.height * 2.5;
+      const childCount = current.children.length;
+      if (hasUsefulScale && childCount >= 2) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+    return selected.parentElement || document.body;
+  }
+
+  function collectMoveGuideCandidates(selected) {
+    const seen = new Set();
+    const candidates = [];
+    const add = (element, role = "element") => {
+      if (!element || seen.has(element) || !isGuideCandidate(element, selected, role)) {
+        return;
+      }
+      seen.add(element);
+      candidates.push(rectSnapshotForGuides(element, role));
+    };
+    if (selected.parentElement) {
+      add(selected.parentElement, "parent");
+      Array.from(selected.parentElement.children).forEach((child) => add(child, "sibling"));
+    }
+    const surface = moveSurfaceFor(selected);
+    add(surface, "surface");
+    let current = selected.parentElement;
+    while (current && current !== surface && current.parentElement) {
+      add(current.parentElement, "ancestor");
+      current = current.parentElement;
+    }
+    const all = Array.from(surface?.querySelectorAll("*") || []);
+    for (const element of all) {
+      if (candidates.length >= 160) {
+        break;
+      }
+      add(element, "page");
+    }
+    return candidates;
+  }
+
+  function collectNearbyMoveCandidates(selected, movedRect) {
+    const seen = new Set();
+    const candidates = [];
+    const add = (element, role = "nearby") => {
+      if (!element || seen.has(element) || !isGuideCandidate(element, selected, role)) {
+        return;
+      }
+      const candidate = rectSnapshotForGuides(element, role);
+      if (guideLogic.filterMoveCandidates(movedRect, [candidate], { radius: snapCandidateRadius }).length) {
+        seen.add(element);
+        candidates.push(candidate);
+      }
+    };
+    const all = Array.from(document.body?.querySelectorAll("*") || []);
+    for (const element of all) {
+      if (candidates.length >= 120) {
+        break;
+      }
+      add(element);
+    }
+    return candidates;
+  }
+
+  function guideLayer() {
+    return document.getElementById(guideLayerId);
+  }
+
+  function hideMoveGuides() {
+    const layer = guideLayer();
+    if (layer) {
+      layer.replaceChildren();
+      layer.style.display = "none";
+    }
+    state.lastMoveGuide = null;
+  }
+
+  function lineElement(className, axis, styles) {
+    const element = document.createElement("div");
+    element.className = className;
+    element.dataset.axis = axis;
+    Object.assign(element.style, styles);
+    return element;
+  }
+
+  function labelElement(text, left, top, kind = "") {
+    const element = document.createElement("div");
+    element.className = "cbm-guide-label";
+    element.textContent = text;
+    if (kind) {
+      element.dataset.kind = kind;
+    }
+    element.style.left = `${Math.round(left)}px`;
+    element.style.top = `${Math.round(top)}px`;
+    return element;
+  }
+
+  function renderGuideMatch(layer, match, selectedRect) {
+    const guide = match.guide;
+    if (!guide) {
+      return;
+    }
+    if (match.axis === "x") {
+      const from = Math.max(0, Math.min(selectedRect.top, selectedRect.bottom, guide.from, guide.to) - 28);
+      const to = Math.min(window.innerHeight, Math.max(selectedRect.top, selectedRect.bottom, guide.from, guide.to) + 28);
+      layer.appendChild(lineElement("cbm-guide-line", "x", {
+        left: `${Math.round(guide.value)}px`,
+        top: `${Math.round(from)}px`,
+        height: `${Math.max(1, Math.round(to - from))}px`
+      }));
+      if (match.kind === "center") {
+        layer.appendChild(labelElement("center", guide.value + 6, (from + to) / 2 - 8, "center"));
+      }
+      return;
+    }
+    const from = Math.max(0, Math.min(selectedRect.left, selectedRect.right, guide.from, guide.to) - 28);
+    const to = Math.min(window.innerWidth, Math.max(selectedRect.left, selectedRect.right, guide.from, guide.to) + 28);
+    layer.appendChild(lineElement("cbm-guide-line", "y", {
+      left: `${Math.round(from)}px`,
+      top: `${Math.round(guide.value)}px`,
+      width: `${Math.max(1, Math.round(to - from))}px`
+    }));
+    if (match.kind === "center") {
+      layer.appendChild(labelElement("center", (from + to) / 2 - 18, guide.value + 6, "center"));
+    }
+  }
+
+  function candidateById(candidates, id) {
+    return candidates.find((candidate) => candidate.id === id) || null;
+  }
+
+  function renderSpacing(layer, selectedRect, candidates) {
+    const spacing = guideLogic.measureSpacing(selectedRect, candidates)
+      .filter((item) => item.distance <= 360)
+      .slice(0, 4);
+    for (const item of spacing) {
+      const target = candidateById(candidates, item.targetId);
+      if (!target) {
+        continue;
+      }
+      if (item.side === "left" || item.side === "right") {
+        const isContainer = item.targetRole === "parent" || item.targetRole === "ancestor";
+        const start = item.side === "left"
+          ? (isContainer ? target.left : target.right)
+          : selectedRect.right;
+        const end = item.side === "left"
+          ? selectedRect.left
+          : (isContainer ? target.right : target.left);
+        const y = isContainer
+          ? Math.round(selectedRect.top + selectedRect.height / 2)
+          : Math.round((Math.max(selectedRect.top, target.top) + Math.min(selectedRect.bottom, target.bottom)) / 2);
+        layer.appendChild(lineElement("cbm-spacing-line", "x", {
+          left: `${Math.round(start)}px`,
+          top: `${y}px`,
+          width: `${Math.max(1, Math.round(end - start))}px`
+        }));
+        layer.appendChild(labelElement(String(Math.round(item.distance)), (start + end) / 2 - 9, y - 24));
+        continue;
+      }
+      const isContainer = item.targetRole === "parent" || item.targetRole === "ancestor";
+      const start = item.side === "top"
+        ? (isContainer ? target.top : target.bottom)
+        : selectedRect.bottom;
+      const end = item.side === "top"
+        ? selectedRect.top
+        : (isContainer ? target.bottom : target.top);
+      const x = isContainer
+        ? Math.round(selectedRect.left + selectedRect.width / 2)
+        : Math.round((Math.max(selectedRect.left, target.left) + Math.min(selectedRect.right, target.right)) / 2);
+      layer.appendChild(lineElement("cbm-spacing-line", "y", {
+        left: `${x}px`,
+        top: `${Math.round(start)}px`,
+        height: `${Math.max(1, Math.round(end - start))}px`
+      }));
+      layer.appendChild(labelElement(String(Math.round(item.distance)), x + 8, (start + end) / 2 - 8));
+    }
+    return spacing.length;
+  }
+
+  function renderMoveGuides(result, candidates) {
+    const layer = guideLayer();
+    if (!layer) {
+      return;
+    }
+    layer.replaceChildren();
+    for (const match of result.matches) {
+      renderGuideMatch(layer, match, result.rect);
+    }
+    const spacingCount = renderSpacing(layer, result.rect, candidates);
+    layer.style.display = result.matches.length || spacingCount ? "block" : "none";
+  }
+
   function moveSibling(direction) {
     if (!state.selected || !state.selected.parentElement) {
       return;
@@ -2740,34 +3275,128 @@
     record("reorder", state.selected, { beforeIndex, afterIndex: getIndex(state.selected) });
   }
 
+  function moveOriginFor(element, styles) {
+    if (styles.position === "fixed") {
+      return { left: 0, top: 0 };
+    }
+    const parent = element.offsetParent instanceof HTMLElement ? element.offsetParent : null;
+    if (!parent) {
+      return { left: window.scrollX, top: window.scrollY };
+    }
+    const rect = parent.getBoundingClientRect();
+    return {
+      left: rect.left + parent.clientLeft - parent.scrollLeft,
+      top: rect.top + parent.clientTop - parent.scrollTop
+    };
+  }
+
+  function promoteSelectedForMove(element, styles) {
+    const rect = element.getBoundingClientRect();
+    const marginLeft = Number.parseFloat(styles.marginLeft || "0") || 0;
+    const marginTop = Number.parseFloat(styles.marginTop || "0") || 0;
+    const left = rect.left - marginLeft;
+    const top = rect.top - marginTop;
+    document.body.appendChild(element);
+    element.style.position = "fixed";
+    element.style.left = `${Math.round(left)}px`;
+    element.style.top = `${Math.round(top)}px`;
+    element.style.right = "auto";
+    element.style.bottom = "auto";
+    element.style.zIndex = "2147483644";
+    return { left, top };
+  }
+
+  function prepareSelectedForMove(element, styles) {
+    if (styles.position === "absolute" || styles.position === "fixed") {
+      return promoteSelectedForMove(element, styles);
+    }
+    if (styles.position === "static") {
+      element.style.position = "relative";
+      if (styles.zIndex === "auto") {
+        element.style.zIndex = "1000";
+      }
+      return { left: Number.parseFloat(element.style.left || "0") || 0, top: Number.parseFloat(element.style.top || "0") || 0 };
+    }
+    if (styles.zIndex === "auto") {
+      element.style.zIndex = "1000";
+    }
+    return { left: Number.parseFloat(element.style.left || "0") || 0, top: Number.parseFloat(element.style.top || "0") || 0 };
+  }
+
   function beginMove(event) {
     if (!state.selected || state.mode !== "move" || isOverlayElement(event.target)) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
+    const undo = captureUndo(state.selected);
     const styles = getComputedStyle(state.selected);
-    if (styles.position === "static") {
-      state.selected.style.position = "relative";
-    }
+    const start = prepareSelectedForMove(state.selected, styles);
+    const startRect = rectSnapshotForGuides(state.selected, "selected");
+    const candidates = collectMoveGuideCandidates(state.selected);
     state.drag = {
       x: event.clientX,
       y: event.clientY,
-      left: Number.parseFloat(state.selected.style.left || "0") || 0,
-      top: Number.parseFloat(state.selected.style.top || "0") || 0,
-      undo: captureUndo(state.selected)
+      left: start.left,
+      top: start.top,
+      rect: startRect,
+      candidates,
+      activeCandidates: candidates,
+      axisLock: null,
+      lastGuide: null,
+      undo
     };
+    state.lastMoveGuide = null;
   }
 
   function continueMove(event) {
     if (!state.drag || !state.selected) {
       return;
     }
-    const dx = event.clientX - state.drag.x;
-    const dy = event.clientY - state.drag.y;
-    state.selected.style.left = `${Math.round(state.drag.left + dx)}px`;
-    state.selected.style.top = `${Math.round(state.drag.top + dy)}px`;
+    const rawDx = event.clientX - state.drag.x;
+    const rawDy = event.clientY - state.drag.y;
+    const locked = guideLogic.applyAxisLock(rawDx, rawDy, {
+      shiftKey: event.shiftKey,
+      currentLock: state.drag.axisLock,
+      threshold: 4
+    });
+    state.drag.axisLock = locked.axisLock;
+    const dx = locked.dx;
+    const dy = locked.dy;
+    const movedRect = guideLogic.moveRect(state.drag.rect, dx, dy);
+    const nearbyCandidates = collectNearbyMoveCandidates(state.selected, movedRect);
+    const activeCandidates = guideLogic.mergeNearbyCandidates(movedRect, state.drag.candidates, nearbyCandidates, {
+      radius: snapCandidateRadius
+    });
+    state.drag.activeCandidates = activeCandidates;
+    const guideResult = event.altKey
+      ? {
+          rect: movedRect,
+          delta: { x: dx, y: dy },
+          matches: []
+        }
+      : guideLogic.snapRect(state.drag.rect, {
+          dx,
+          dy,
+          candidates: activeCandidates,
+          axes: state.drag.axisLock ? [state.drag.axisLock] : ["x", "y"],
+          centerOnly: state.centerSnapKey,
+          threshold: snapThreshold
+        });
+    state.drag.lastGuide = guideResult;
+    state.lastMoveGuide = {
+      delta: guideResult.delta,
+      axisLock: state.drag.axisLock,
+      centerOnly: state.centerSnapKey,
+      matches: guideResult.matches,
+      spacing: guideLogic.measureSpacing(guideResult.rect, activeCandidates).slice(0, 4),
+      landingReferences: guideLogic.nearestMoveReferences(guideResult.rect, activeCandidates, { limit: 4 }),
+      candidateCount: activeCandidates.length
+    };
+    state.selected.style.left = `${Math.round(state.drag.left + guideResult.delta.x)}px`;
+    state.selected.style.top = `${Math.round(state.drag.top + guideResult.delta.y)}px`;
     updateOutline();
+    renderMoveGuides(guideResult, activeCandidates);
   }
 
   function finishMove() {
@@ -2775,15 +3404,11 @@
       return;
     }
     const moved = state.drag;
+    const moveGuide = state.lastMoveGuide;
     state.drag = null;
-    if (moved.undo) {
-      state.undoStack.push(moved.undo);
-    }
-    record("move", state.selected, {
-      start: { x: moved.x, y: moved.y },
-      styleLeft: state.selected.style.left,
-      styleTop: state.selected.style.top
-    });
+    hideMoveGuides();
+    stagePendingMove(moved, moveGuide);
+    state.lastMoveGuide = null;
   }
 
   function beginResize(event) {
@@ -3055,6 +3680,7 @@
   }
 
   async function sendSession() {
+    commitPendingMove({ silent: true });
     const pendingNote = pendingNoteRecord();
     const records = recordsForSend(pendingNote);
     if (records.length === 0) {
@@ -3086,7 +3712,7 @@
     state.lastSentAt = new Date().toISOString();
     state.lastSentFingerprint = fingerprint;
     clearNotes({ silent: true });
-    updateStatus(status);
+    confirmSentStatus(status);
   }
 
   async function copySession() {
@@ -3187,13 +3813,29 @@
 
   function modeStatus() {
     if (state.mode === "select") return "Select mode armed. Next page click selects an element.";
-    if (state.mode === "move") return "Move mode. Drag the selected element.";
+    if (state.mode === "move") return "Move mode. Drag the selected element. Hold Shift to lock axis, Alt to bypass snap.";
     if (state.mode === "parent") return "Reparent mode. Click the new parent.";
     return "Interact mode. Page clicks pass through; Alt+Click selects.";
   }
 
   function syncModeButtons() {
+    const pendingMove = pendingMoveForSelected();
     document.querySelectorAll(`#${rootId} [data-mode]`).forEach((button) => {
+      const isMove = button.dataset.mode === "move";
+      if (isMove && pendingMove) {
+        button.dataset.active = "true";
+        button.setAttribute("data-pending-action", "commit-move");
+        button.title = "Commit move";
+        button.setAttribute("aria-label", "Commit move");
+        button.innerHTML = icons.check;
+        return;
+      }
+      if (isMove) {
+        button.removeAttribute("data-pending-action");
+        button.title = "Move selected element";
+        button.setAttribute("aria-label", "Move selected element");
+        button.innerHTML = icons.move;
+      }
       button.dataset.active = button.dataset.mode === state.mode ? "true" : "false";
     });
   }
@@ -3225,6 +3867,24 @@
         <div class="cbm-actions">
           <button class="cbm-icon" type="button" data-action="toggle" title="Minimize" aria-label="Minimize">${icons.min}</button>
           <button class="cbm-icon" type="button" data-action="close" title="Dock panel to launcher (Ctrl+Alt+D)" aria-label="Dock panel to launcher">${icons.dock}</button>
+          <div class="cbm-head-help">
+            <button class="cbm-icon" type="button" data-action="hotkeys-menu" title="Show hotkeys" aria-label="Show hotkeys" aria-haspopup="menu" aria-expanded="false">${icons.info}</button>
+            <div class="cbm-hotkeys-menu" data-role="hotkeys-menu" hidden>
+              <div class="cbm-hotkeys-title">Hotkeys</div>
+              <div class="cbm-hotkey-row"><kbd>Ctrl+Alt+I</kbd><span>Interact mode</span></div>
+              <div class="cbm-hotkey-row"><kbd>Ctrl+Alt+S</kbd><span>Select element</span></div>
+              <div class="cbm-hotkey-row"><kbd>Ctrl+Alt+D</kbd><span>Dock panel</span></div>
+              <div class="cbm-hotkey-row"><kbd>Ctrl+Z</kbd><span>Undo</span></div>
+              <div class="cbm-hotkey-row"><kbd>Ctrl+Y</kbd><span>Redo</span></div>
+              <div class="cbm-hotkey-row"><kbd>Ctrl+Shift+Z</kbd><span>Redo</span></div>
+              <div class="cbm-hotkey-row"><kbd>Escape</kbd><span>Clear selection</span></div>
+              <div class="cbm-hotkey-row"><kbd>Ctrl+Enter</kbd><span>Add note from notes field</span></div>
+              <div class="cbm-hotkey-row"><kbd>Alt+Click</kbd><span>Select element while interacting</span></div>
+              <div class="cbm-hotkey-row"><kbd>Shift+Drag</kbd><span>Lock move axis</span></div>
+              <div class="cbm-hotkey-row"><kbd>C+Drag</kbd><span>Center-only snap</span></div>
+              <div class="cbm-hotkey-row"><kbd>Alt+Drag</kbd><span>Bypass move snapping</span></div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="cbm-body" data-role="body">
@@ -3373,7 +4033,8 @@
         </div>
         <div class="cbm-status" data-role="status">Interact mode. Page clicks pass through; Alt+Click selects.</div>
       </div>
-      <div class="cbm-panel-resize" data-role="panel-resize" title="Resize panel" aria-hidden="true"></div>
+      <div class="cbm-panel-resize" data-role="panel-resize" data-resize-corner="br" title="Resize panel" aria-hidden="true"></div>
+      <div class="cbm-panel-resize" data-role="panel-resize" data-resize-corner="bl" title="Resize panel from left" aria-hidden="true"></div>
     `;
     document.documentElement.appendChild(root);
     root.addEventListener("click", onPanelClick);
@@ -3513,6 +4174,13 @@
     document.documentElement.appendChild(outline);
   }
 
+  function createGuideLayer() {
+    const layer = document.createElement("div");
+    layer.id = guideLayerId;
+    layer.style.display = "none";
+    document.documentElement.appendChild(layer);
+  }
+
   function createLauncher() {
     const launcher = document.createElement("button");
     launcher.id = launcherId;
@@ -3574,6 +4242,8 @@
     const launcher = document.getElementById(launcherId);
     if (root) root.style.display = "none";
     if (outline) outline.style.display = "none";
+    setHotkeysMenuOpen(false);
+    hideMoveGuides();
     if (launcher) launcher.style.display = "flex";
   }
 
@@ -3594,7 +4264,7 @@
   }
 
   function beginPanelDrag(event) {
-    if (event.target?.closest?.("button,.cbm-panel-resize")) {
+    if (event.target?.closest?.("button,.cbm-panel-resize,.cbm-hotkeys-menu")) {
       return;
     }
     const root = document.getElementById(rootId);
@@ -3644,6 +4314,7 @@
     root.style.width = `${Math.round(rect.width)}px`;
     root.style.height = `${Math.round(rect.height)}px`;
     state.panelResize = {
+      corner: event.currentTarget?.dataset.resizeCorner === "bl" ? "bl" : "br",
       x: event.clientX,
       y: event.clientY,
       left: rect.left,
@@ -3665,9 +4336,18 @@
     }
     const minWidth = Math.min(panelMinWidth, window.innerWidth - 16);
     const minHeight = Math.min(panelMinHeight, window.innerHeight - 16);
-    const maxWidth = Math.max(minWidth, window.innerWidth - state.panelResize.left - 8);
     const maxHeight = Math.max(minHeight, getPanelMaxHeight(root));
-    const width = Math.min(maxWidth, Math.max(minWidth, Math.round(state.panelResize.width + event.clientX - state.panelResize.x)));
+    let width;
+    if (state.panelResize.corner === "bl") {
+      const right = state.panelResize.left + state.panelResize.width;
+      const requestedLeft = state.panelResize.left + event.clientX - state.panelResize.x;
+      const left = Math.min(right - minWidth, Math.max(8, Math.round(requestedLeft)));
+      width = Math.min(window.innerWidth - left - 8, Math.max(minWidth, Math.round(right - left)));
+      root.style.left = `${left}px`;
+    } else {
+      const maxWidth = Math.max(minWidth, window.innerWidth - state.panelResize.left - 8);
+      width = Math.min(maxWidth, Math.max(minWidth, Math.round(state.panelResize.width + event.clientX - state.panelResize.x)));
+    }
     const height = Math.min(maxHeight, Math.max(minHeight, Math.round(state.panelResize.height + event.clientY - state.panelResize.y)));
     root.style.width = `${width}px`;
     root.style.height = `${height}px`;
@@ -3784,6 +4464,24 @@
     setClearMenuOpen(!menu || menu.hidden);
   }
 
+  function setHotkeysMenuOpen(open) {
+    const menu = document.querySelector(`#${rootId} [data-role="hotkeys-menu"]`);
+    const toggle = document.querySelector(`#${rootId} [data-action="hotkeys-menu"]`);
+    if (!menu) {
+      return;
+    }
+    menu.hidden = !open;
+    menu.dataset.open = String(open);
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", String(open));
+    }
+  }
+
+  function toggleHotkeysMenu() {
+    const menu = document.querySelector(`#${rootId} [data-role="hotkeys-menu"]`);
+    setHotkeysMenuOpen(!menu || menu.hidden);
+  }
+
   function onPanelClick(event) {
     const popToggle = event.target?.closest?.("[data-pop-toggle]");
     if (popToggle) {
@@ -3811,6 +4509,11 @@
     const mode = control?.dataset?.mode;
     if (mode) {
       setClearMenuOpen(false);
+      setHotkeysMenuOpen(false);
+      if (mode === "move" && control.dataset.pendingAction === "commit-move") {
+        commitPendingMove();
+        return;
+      }
       setMode(mode);
       return;
     }
@@ -3818,13 +4521,23 @@
       if (!event.target?.closest?.("[data-role='clear-menu']")) {
         setClearMenuOpen(false);
       }
+      if (!event.target?.closest?.("[data-role='hotkeys-menu']")) {
+        setHotkeysMenuOpen(false);
+      }
       return;
     }
     event.preventDefault();
     if (action !== "clear-menu") {
       setClearMenuOpen(false);
     }
+    if (action !== "hotkeys-menu") {
+      setHotkeysMenuOpen(false);
+    }
     if (action === "close") hidePanel();
+    if (action === "hotkeys-menu") {
+      toggleHotkeysMenu();
+      return;
+    }
     if (action === "clear-menu") {
       toggleClearMenu();
       return;
@@ -3966,22 +4679,28 @@
   function onKeyDown(event) {
     const key = String(event.key || "").toLowerCase();
     const accelerator = event.ctrlKey || event.metaKey;
+    if (state.panelOpen && key === "c" && !accelerator && !event.altKey && !isEditableTarget(event.target)) {
+      state.centerSnapKey = true;
+    }
     if (state.panelOpen && event.ctrlKey && event.altKey && !event.metaKey) {
       if (key === "i") {
         event.preventDefault();
         event.stopPropagation();
+        setHotkeysMenuOpen(false);
         setMode("interact");
         return;
       }
       if (key === "s") {
         event.preventDefault();
         event.stopPropagation();
+        setHotkeysMenuOpen(false);
         setMode("select");
         return;
       }
       if (key === "d") {
         event.preventDefault();
         event.stopPropagation();
+        setHotkeysMenuOpen(false);
         hidePanel();
         return;
       }
@@ -4001,7 +4720,25 @@
       }
     }
     if (event.key === "Escape") {
+      const hotkeysMenu = document.querySelector(`#${rootId} [data-role="hotkeys-menu"]`);
+      if (hotkeysMenu && !hotkeysMenu.hidden) {
+        event.preventDefault();
+        event.stopPropagation();
+        setHotkeysMenuOpen(false);
+        return;
+      }
+      if (cancelPendingMove()) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       clearSelection();
+    }
+  }
+
+  function onKeyUp(event) {
+    if (String(event.key || "").toLowerCase() === "c") {
+      state.centerSnapKey = false;
     }
   }
 
@@ -4015,10 +4752,12 @@
     document.removeEventListener("pointermove", onPointerMove, true);
     document.removeEventListener("pointerup", onPointerUp, true);
     document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("keyup", onKeyUp, true);
     window.removeEventListener("scroll", updateOutline, true);
     window.removeEventListener("resize", updateOutline);
     document.getElementById(rootId)?.remove();
     document.getElementById(outlineId)?.remove();
+    document.getElementById(guideLayerId)?.remove();
     document.getElementById(launcherId)?.remove();
     document.getElementById(styleId)?.remove();
     document.getElementById(hoverStyleId)?.remove();
@@ -4028,6 +4767,7 @@
   createStyle();
   createPanel();
   createOutline();
+  createGuideLayer();
   createLauncher();
 
   document.addEventListener("click", onDocumentClick, true);
@@ -4035,6 +4775,7 @@
   document.addEventListener("pointermove", onPointerMove, true);
   document.addEventListener("pointerup", onPointerUp, true);
   document.addEventListener("keydown", onKeyDown, true);
+  document.addEventListener("keyup", onKeyUp, true);
   window.addEventListener("scroll", updateOutline, true);
   window.addEventListener("resize", updateOutline);
 

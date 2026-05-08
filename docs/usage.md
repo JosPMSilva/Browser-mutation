@@ -53,6 +53,22 @@ Useful overlay shortcuts:
 - `Ctrl+Alt+I`: Interact mode
 - `Ctrl+Alt+S`: Select element mode
 - `Ctrl+Alt+D`: dock the panel to the launcher
+- Hold `Shift` while dragging in Move mode to lock movement to the dominant axis.
+- Hold `C` while dragging in Move mode to restrict snapping to center alignment.
+- Hold `Alt` while dragging in Move mode to temporarily bypass snap guides.
+
+## Precise Move Workflow
+
+Move mode records implementation intent for precise layout changes:
+
+1. Select an element and enable Move mode.
+2. Drag near the intended reference element. Browser Mutation shows snap lines for alignment and separate spacing lines for measured gaps.
+3. Use `Shift` to preserve one axis while moving along the other axis.
+4. Use `C` when center alignment is desired but edge snaps are competing because the two elements are similar in size.
+5. Use `Alt` for free movement when a snap would be unhelpful.
+6. Click the check icon to record the final move. If a move is still staged, **Send** records it automatically before posting the payload.
+
+Move snapping uses nearby DOM references instead of every descendant on the page. It ignores Browser Mutation's own overlay, avoids individual text characters and SVG internals, and includes nearby landing references in the payload so Codex can understand where the element was placed.
 
 The clear X button opens a compact action menu:
 
@@ -82,6 +98,8 @@ Invoke-RestMethod '<latestUrl>'
 Codex should treat the records as implementation intent, not literal patches.
 
 Note records use `action: "note"` and `extra.noteOnly: true`. `extra.scope` is `"element"` for selected-element notes and `"session"` for session notes. Do not rely on top-level payload notes when records are present.
+
+Move records use `action: "move"`. Their `extra` object includes start/end points, the final delta, axis lock state, center-only state, snap matches, measured spacing, nearby landing references, candidate counts, and snap thresholds.
 
 ## Supported Targets
 

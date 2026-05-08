@@ -81,7 +81,7 @@ async function probeMcp() {
       params: {
         protocolVersion: "2025-06-18",
         capabilities: {},
-        clientInfo: { name: "browser-mutation-doctor", version: "0.1.2" }
+        clientInfo: { name: "browser-mutation-doctor", version: "0.1.3" }
       }
     }));
     child.stdin.write(frame({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }));
@@ -94,6 +94,7 @@ checks.push(["Node", `${process.version} at ${process.execPath}`]);
 checks.push(["Repo root", repoRoot]);
 checks.push(["MCP script", await exists(mcpScript) ? "found" : "missing"]);
 checks.push(["Overlay script", await exists(path.join(repoRoot, "scripts", "browser-mutation-overlay.js")) ? "found" : "missing"]);
+checks.push(["Move guide logic", await exists(path.join(repoRoot, "scripts", "browser-mutation-guide-logic.js")) ? "found" : "missing"]);
 
 const probe = await probeMcp();
 checks.push(["MCP tools/list", probe.ok ? `ok (${probe.tools.map((tool) => tool.name).join(", ")})` : `failed (${probe.error || probe.stderr || "unknown error"})`]);

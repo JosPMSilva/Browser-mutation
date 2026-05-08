@@ -1,6 +1,6 @@
 {
   "name": "browser-mutation",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Capture live browser UI edits as structured mutation intent for Codex.",
   "author": {
     "name": "JosPMSilva",

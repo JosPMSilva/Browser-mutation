@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const overlayPath = path.join(__dirname, "browser-mutation-overlay.js");
+const guideLogicPath = path.join(__dirname, "browser-mutation-guide-logic.js");
 const collectorBasePath = "/__browser-mutation";
 const maxBodyBytes = 2 * 1024 * 1024;
 
@@ -234,8 +235,9 @@ async function readBody(req) {
 }
 
 async function serveOverlay(res) {
-  const source = await fs.readFile(overlayPath, "utf8");
-  const configured = source
+  const guideSource = await fs.readFile(guideLogicPath, "utf8");
+  const overlaySource = await fs.readFile(overlayPath, "utf8");
+  const configured = `${guideSource}\n${overlaySource}`
     .replaceAll("__CODEX_BROWSER_MUTATION_PORT__", String(state.port))
     .replaceAll("__CODEX_BROWSER_MUTATION_TOKEN__", state.token);
   res.writeHead(200, { "content-type": "application/javascript; charset=utf-8" });
@@ -517,7 +519,7 @@ async function handleRequest(message) {
       sendResult(message.id, {
         protocolVersion: message.params?.protocolVersion ?? "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "browser-mutation", version: "0.1.2" }
+        serverInfo: { name: "browser-mutation", version: "0.1.3" }
       });
       return;
     }
